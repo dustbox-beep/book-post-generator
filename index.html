@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>蔵書スキャン - Instagram投稿文ジェネレーター</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <header class="app-header">
+    <h1>📚 蔵書スキャン</h1>
+    <p class="subtitle">ISBNバーコードをスキャンして投稿文を作成</p>
+  </header>
+
+  <main>
+    <section class="card" id="scan-section">
+      <div id="reader"></div>
+      <div class="scan-controls">
+        <button id="start-scan-btn" class="btn btn-primary">📷 カメラでスキャン開始</button>
+        <button id="stop-scan-btn" class="btn btn-secondary" hidden>スキャン停止</button>
+      </div>
+      <p id="scan-status" class="status-text"></p>
+
+      <details class="manual-input">
+        <summary>ISBNを手入力する</summary>
+        <form id="manual-form" class="manual-form">
+          <input type="text" id="manual-isbn" inputmode="numeric" placeholder="例: 9784167158057" pattern="[0-9]{10,13}">
+          <button type="submit" class="btn btn-primary">検索</button>
+        </form>
+      </details>
+    </section>
+
+    <section class="card" id="result-section" hidden>
+      <h2>書誌情報</h2>
+      <div id="book-info" class="book-info"></div>
+
+      <h2>Instagram投稿文</h2>
+      <textarea id="post-text" rows="10"></textarea>
+      <div class="copy-row">
+        <button id="copy-btn" class="btn btn-primary">📋 コピー</button>
+        <span id="copy-status" class="status-text"></span>
+      </div>
+    </section>
+
+    <section class="card" id="error-section" hidden>
+      <p id="error-message" class="error-text"></p>
+    </section>
+
+    <section class="card" id="history-section" hidden>
+      <h2>スキャン履歴</h2>
+      <ul id="history-list" class="history-list"></ul>
+    </section>
+  </main>
+</div>
+
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="script.js"></script>
+</body>
+</html>
