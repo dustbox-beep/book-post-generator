@@ -3,6 +3,7 @@
 
 使い方:
     python3 bulk_image_download.py urls.txt 保存先フォルダ [--wait 1.0]
+    python3 bulk_image_download.py          （引数なし：その場でURLを貼り付け、images に保存）
 
 urls.txt には画像ファイルのURLを1行に1つずつ書きます（# で始まる行は無視）。
 自分の素材やフリー素材など、保存してよい画像にだけ使ってください。
@@ -22,6 +23,17 @@ def read_urls(path):
         return [line.strip() for line in f if line.strip() and not line.startswith("#")]
 
 
+def input_urls():
+    print("画像のURLを1行に1つずつ貼り付けてください。何も入力せずEnterで開始します。")
+    urls = []
+    while True:
+        line = input("> ").strip()
+        if not line:
+            return urls
+        if not line.startswith("#"):
+            urls.append(line)
+
+
 def file_name(url, index):
     ext = os.path.splitext(urllib.parse.urlparse(url).path)[1].lower()
     if ext not in IMAGE_EXTS:
@@ -31,12 +43,12 @@ def file_name(url, index):
 
 def main():
     parser = argparse.ArgumentParser(description="画像URL一覧から一括ダウンロード")
-    parser.add_argument("url_list", help="画像URLを1行ずつ書いたテキストファイル")
-    parser.add_argument("out_dir", help="保存先フォルダ")
+    parser.add_argument("url_list", nargs="?", help="画像URLを1行ずつ書いたテキストファイル（省略するとその場で入力）")
+    parser.add_argument("out_dir", nargs="?", default="images", help="保存先フォルダ（既定: images）")
     parser.add_argument("--wait", type=float, default=1.0, help="1枚ごとの待ち時間（秒）")
     args = parser.parse_args()
 
-    urls = read_urls(args.url_list)
+    urls = read_urls(args.url_list) if args.url_list else input_urls()
     os.makedirs(args.out_dir, exist_ok=True)
     ok = 0
     for i, url in enumerate(urls, start=1):
