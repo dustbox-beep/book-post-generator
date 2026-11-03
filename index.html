@@ -3,15 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>蔵書スキャン - Instagram投稿文ジェネレーター</title>
+<title>蔵書スキャン - 目録 & Instagram投稿文</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="app">
   <header class="app-header">
     <h1>📚 蔵書スキャン</h1>
-    <p class="subtitle">ISBNバーコードをスキャンして投稿文を作成</p>
+    <p class="subtitle" id="mode-subtitle">ISBNバーコードをスキャンして投稿文を作成</p>
   </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab is-active" data-mode="post" role="tab">📝 投稿文作成</button>
+    <button class="tab" data-mode="catalog" role="tab">📚 蔵書目録 <span id="catalog-count-badge" class="badge">0</span></button>
+  </nav>
 
   <main>
     <section class="card" id="scan-section">
@@ -25,13 +30,18 @@
       <details class="manual-input">
         <summary>ISBNを手入力する</summary>
         <form id="manual-form" class="manual-form">
-          <input type="text" id="manual-isbn" inputmode="numeric" placeholder="例: 9784167158057" pattern="[0-9]{10,13}">
+          <input type="text" id="manual-isbn" inputmode="numeric" placeholder="例: 9784167158057" pattern="[0-9Xx\-]{10,17}">
           <button type="submit" class="btn btn-primary">検索</button>
         </form>
       </details>
     </section>
 
-    <section class="card" id="result-section" hidden>
+    <section class="card" id="error-section" hidden>
+      <p id="error-message" class="error-text"></p>
+    </section>
+
+    <!-- 投稿文モード -->
+    <section class="card mode-post" id="result-section" hidden>
       <h2>書誌情報</h2>
       <div id="book-info" class="book-info"></div>
 
@@ -39,20 +49,76 @@
       <textarea id="post-text" rows="10"></textarea>
       <div class="copy-row">
         <button id="copy-btn" class="btn btn-primary">📋 コピー</button>
-        <span id="copy-status" class="status-text"></span>
+        <button id="add-to-catalog-btn" class="btn btn-secondary">＋ 目録に追加</button>
       </div>
+      <p id="copy-status" class="status-text"></p>
     </section>
 
-    <section class="card" id="error-section" hidden>
-      <p id="error-message" class="error-text"></p>
-    </section>
-
-    <section class="card" id="history-section" hidden>
+    <section class="card mode-post" id="history-section" hidden>
       <h2>スキャン履歴</h2>
       <ul id="history-list" class="history-list"></ul>
     </section>
+
+    <!-- 目録モード -->
+    <section class="card mode-catalog" id="catalog-section" hidden>
+      <div class="catalog-head">
+        <h2>蔵書目録</h2>
+        <span id="catalog-count" class="catalog-count"></span>
+      </div>
+      <div class="catalog-filters">
+        <input type="search" id="catalog-search" placeholder="タイトル・著者・置き場所・メモで検索">
+        <select id="catalog-status-filter">
+          <option value="">すべて</option>
+          <option value="未読">未読</option>
+          <option value="読書中">読書中</option>
+          <option value="読了">読了</option>
+        </select>
+      </div>
+      <ul id="catalog-list" class="catalog-list"></ul>
+      <p id="catalog-empty" class="status-text">まだ登録がありません。上のボタンからスキャンを始めてください。</p>
+    </section>
+
+    <section class="card mode-catalog" id="backup-section" hidden>
+      <h2>書き出し・バックアップ</h2>
+      <p class="note">データはこの端末のブラウザ内に保存されています。ブラウザのデータ消去で消えるため、こまめにバックアップしてください。</p>
+      <div class="btn-grid">
+        <button id="export-csv-btn" class="btn btn-primary">📄 CSVで書き出し<br><small>（Excelで開けます）</small></button>
+        <button id="export-json-btn" class="btn btn-secondary">💾 バックアップ保存</button>
+        <label class="btn btn-secondary file-btn">📂 バックアップ読込
+          <input type="file" id="import-json-input" accept="application/json,.json" hidden>
+        </label>
+      </div>
+      <p id="backup-status" class="status-text"></p>
+    </section>
   </main>
 </div>
+
+<dialog id="edit-dialog" class="edit-dialog">
+  <form id="edit-form" method="dialog">
+    <h2>本の情報を編集</h2>
+    <label>タイトル<input type="text" id="edit-title" required></label>
+    <label>著者<input type="text" id="edit-author"></label>
+    <label>出版社<input type="text" id="edit-publisher"></label>
+    <label>置き場所<input type="text" id="edit-location" list="location-options" placeholder="例: 書斎の本棚2段目"></label>
+    <datalist id="location-options"></datalist>
+    <label>状態
+      <select id="edit-status">
+        <option value="未読">未読</option>
+        <option value="読書中">読書中</option>
+        <option value="読了">読了</option>
+      </select>
+    </label>
+    <label>メモ<textarea id="edit-memo" rows="3"></textarea></label>
+    <p class="edit-meta" id="edit-meta"></p>
+    <div class="dialog-actions">
+      <button type="button" id="edit-delete-btn" class="btn btn-danger">削除</button>
+      <button type="button" id="edit-cancel-btn" class="btn btn-secondary">キャンセル</button>
+      <button type="submit" class="btn btn-primary">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" hidden></div>
 
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="script.js"></script>

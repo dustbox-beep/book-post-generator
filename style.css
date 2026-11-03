@@ -263,6 +263,267 @@ main {
   cursor: pointer;
 }
 
+/* ---------- タブ ---------- */
+.tabs {
+  display: flex;
+  gap: 6px;
+  margin: 0 16px 16px;
+  padding: 4px;
+  background: var(--color-border);
+  border-radius: 12px;
+}
+
+.tab {
+  flex: 1;
+  border: none;
+  background: none;
+  padding: 10px 8px;
+  border-radius: 9px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-secondary);
+  cursor: pointer;
+}
+
+.tab.is-active {
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.badge {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 1px 6px;
+  margin-left: 2px;
+  border-radius: 999px;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 0.75rem;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.btn-danger {
+  background: #f6e0de;
+  color: var(--color-error);
+}
+
+/* ---------- 目録 ---------- */
+.catalog-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.catalog-count {
+  color: var(--color-secondary);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.catalog-filters {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.catalog-filters input,
+.catalog-filters select,
+.edit-dialog input,
+.edit-dialog select,
+.edit-dialog textarea {
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  font-size: 1rem;
+  font-family: inherit;
+  background: #fff;
+  color: var(--color-text);
+}
+
+.catalog-filters input {
+  flex: 1;
+  min-width: 0;
+}
+
+.catalog-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.catalog-list li {
+  display: flex;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.catalog-list li:active {
+  background: var(--color-bg);
+}
+
+.c-cover {
+  width: 44px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 4px;
+  background: var(--color-border);
+  flex-shrink: 0;
+}
+
+.c-cover.no-cover {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6rem;
+  color: var(--color-secondary);
+  text-align: center;
+}
+
+.c-body {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.c-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.c-sub {
+  font-size: 0.8rem;
+  color: var(--color-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.c-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 0.75rem;
+  color: var(--color-secondary);
+}
+
+.c-status {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.c-status-0 { background: #eee9dd; color: var(--color-secondary); }
+.c-status-1 { background: #fbe7cf; color: var(--color-primary-dark); }
+.c-status-2 { background: #dcefdc; color: #2e6b34; }
+
+.note {
+  margin: 0 0 12px;
+  font-size: 0.8rem;
+  color: var(--color-secondary);
+  line-height: 1.5;
+}
+
+.btn-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.btn-grid small {
+  font-weight: 400;
+  font-size: 0.75rem;
+}
+
+.file-btn {
+  display: block;
+  text-align: center;
+}
+
+/* ---------- 編集ダイアログ ---------- */
+.edit-dialog {
+  width: min(440px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  border: none;
+  border-radius: var(--radius);
+  padding: 18px;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.edit-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.edit-dialog h2 {
+  margin: 0 0 12px;
+  font-size: 1.05rem;
+}
+
+.edit-dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-secondary);
+}
+
+.edit-meta {
+  font-size: 0.75rem;
+  color: var(--color-secondary);
+  margin: 0 0 12px;
+}
+
+.dialog-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.dialog-actions .btn {
+  padding: 12px 8px;
+}
+
+/* ---------- トースト ---------- */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  max-width: calc(100vw - 32px);
+  padding: 12px 18px;
+  border-radius: 999px;
+  background: #2b2620;
+  color: #fff;
+  font-size: 0.9rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  z-index: 100;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toast-ok { background: #2e6b34; }
+.toast-warn { background: #a8590f; }
+
 @media (min-width: 600px) {
   .app {
     max-width: 560px;
