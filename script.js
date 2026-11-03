@@ -11,6 +11,7 @@
 
   const $ = (id) => document.getElementById(id);
 
+  const readerEl = $("reader");
   const startBtn = $("start-scan-btn");
   const stopBtn = $("stop-scan-btn");
   const scanStatus = $("scan-status");
@@ -41,7 +42,6 @@
   const editForm = $("edit-form");
   const toastEl = $("toast");
 
-  let scanner = null;
   let isScanning = false;
   let mode = "post";
   let currentBook = null;
@@ -135,53 +135,237 @@
   }
 
   // ---------- スキャン ----------
+  // カメラ映像を縮小せずに枠の範囲だけ切り出して読み取る（細いバーコードの線をつぶさないため）
+
+  const GUIDE = { w: 0.9, h: 0.38 }; // 枠の大きさ（映像に対する割合）
+  const SCAN_INTERVAL_MS = 120;
+  const MAX_DECODE_WIDTH = 1280;
+
+  let stream = null;
+  let videoEl = null;
+  let scanTimer = null;
+  let decoding = false;
+  let nativeDetector = null;
+  let zoomState = null;
+  const workCanvas = document.createElement("canvas");
+  const workCtx = workCanvas.getContext("2d", { willReadFrequently: true });
+
+  function hasDecoder() {
+    return typeof ZXing !== "undefined";
+  }
+
+  let zxReader = null;
+  function getZxReader() {
+    if (!zxReader) {
+      const hints = new Map();
+      hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.EAN_13]);
+      hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+      zxReader = new ZXing.MultiFormatReader();
+      zxReader.setHints(hints);
+    }
+    return zxReader;
+  }
+
+  function zxDecode(canvas) {
+    try {
+      const source = new ZXing.HTMLCanvasElementLuminanceSource(canvas);
+      const bitmap = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(source));
+      return getZxReader().decodeWithState(bitmap).getText();
+    } catch {
+      return null;
+    } finally {
+      if (zxReader) zxReader.reset();
+    }
+  }
+
+  async function setupNativeDetector() {
+    // Android の Chrome などにある端末内蔵の読み取り機能（iPhone の Safari には無いので ZXing を使う）
+    try {
+      if ("BarcodeDetector" in window) {
+        const formats = await BarcodeDetector.getSupportedFormats();
+        if (formats.includes("ean_13")) {
+          nativeDetector = new BarcodeDetector({ formats: ["ean_13"] });
+        }
+      }
+    } catch {
+      nativeDetector = null;
+    }
+  }
+
+  // 画像（canvas）の中から本の ISBN を探す。下段の価格コードしか見つからなければ "price" を返す
+  async function findIsbnInCanvas(canvas) {
+    const texts = [];
+    if (nativeDetector) {
+      try {
+        const found = await nativeDetector.detect(canvas);
+        found.forEach((f) => texts.push(f.rawValue));
+      } catch {}
+    }
+    if (!texts.some(isBookCode)) {
+      const t = zxDecode(canvas);
+      if (t) texts.push(t);
+    }
+    // 上下2段とも写っていて価格コードを先に拾った場合は、上半分・下半分を分けて読み直す
+    if (texts.length && !texts.some(isBookCode)) {
+      for (const half of splitCanvas(canvas)) {
+        const t = zxDecode(half);
+        if (t) texts.push(t);
+      }
+    }
+    const book = texts.find(isBookCode);
+    if (book) return normalizeIsbn(book);
+    return texts.length ? "price" : null;
+  }
+
+  function isBookCode(text) {
+    const isbn = normalizeIsbn(text);
+    return !!isbn && isBookIsbn(isbn);
+  }
+
+  function splitCanvas(canvas) {
+    const h = Math.floor(canvas.height / 2);
+    return [0, h].map((y) => {
+      const c = document.createElement("canvas");
+      c.width = canvas.width;
+      c.height = h;
+      c.getContext("2d").drawImage(canvas, 0, y, canvas.width, h, 0, 0, canvas.width, h);
+      return c;
+    });
+  }
 
   async function startScan() {
     clearError();
-    if (typeof Html5Qrcode === "undefined") {
-      showError("バーコード読み取りライブラリの読み込みに失敗しました。通信環境を確認してください。");
+    if (!hasDecoder()) {
+      showError("バーコード読み取りライブラリの読み込みに失敗しました。通信環境を確認してページを再読み込みしてください。");
       return;
     }
-    scanner = new Html5Qrcode("reader", {
-      formatsToSupport: [Html5QrcodeSupportedFormats.EAN_13],
-      verbose: false,
-    });
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showError("このブラウザではカメラを使えません。Safari または Chrome で開いてください。");
+      return;
+    }
     try {
-      await scanner.start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 260, height: 140 } },
-        onScanSuccess,
-        () => {}
-      );
-      isScanning = true;
-      startBtn.hidden = true;
-      stopBtn.hidden = false;
-      scanStatus.textContent = scanHint();
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+      });
     } catch (err) {
-      showError("カメラを起動できませんでした。カメラの利用を許可しているかご確認ください。");
       console.error(err);
+      showError("カメラを起動できませんでした。カメラの利用を許可しているかご確認ください。");
+      return;
+    }
+
+    await setupNativeDetector();
+
+    readerEl.innerHTML = "";
+    videoEl = document.createElement("video");
+    videoEl.setAttribute("playsinline", "");
+    videoEl.muted = true;
+    videoEl.srcObject = stream;
+    const guide = document.createElement("div");
+    guide.className = "scan-guide";
+    guide.style.width = GUIDE.w * 100 + "%";
+    guide.style.height = GUIDE.h * 100 + "%";
+    const line = document.createElement("div");
+    line.className = "scan-line";
+    guide.appendChild(line);
+    readerEl.append(videoEl, guide);
+    readerEl.classList.add("is-active");
+
+    try {
+      await videoEl.play();
+    } catch (err) {
+      console.error(err);
+    }
+
+    await setupCameraTuning();
+
+    isScanning = true;
+    startBtn.hidden = true;
+    stopBtn.hidden = false;
+    scanStatus.textContent = scanHint();
+    scanTimer = setInterval(scanFrame, SCAN_INTERVAL_MS);
+  }
+
+  // ピントを合わせ続ける設定と、対応端末ではズーム切替ボタンを用意する
+  async function setupCameraTuning() {
+    zoomState = null;
+    const track = stream && stream.getVideoTracks()[0];
+    if (!track || !track.getCapabilities) return;
+    const caps = track.getCapabilities();
+    try {
+      if (caps.focusMode && caps.focusMode.includes("continuous")) {
+        await track.applyConstraints({ advanced: [{ focusMode: "continuous" }] });
+      }
+    } catch {}
+    if (caps.zoom && caps.zoom.max >= 1.5) {
+      const levels = [caps.zoom.min || 1, Math.min(2, caps.zoom.max)];
+      zoomState = { track, levels, index: 0 };
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "zoom-btn";
+      btn.textContent = "ズーム " + levels[1] + "倍";
+      btn.addEventListener("click", async () => {
+        zoomState.index = 1 - zoomState.index;
+        try {
+          await track.applyConstraints({ advanced: [{ zoom: levels[zoomState.index] }] });
+          btn.textContent = zoomState.index ? "ズーム 1倍" : "ズーム " + levels[1] + "倍";
+        } catch {}
+      });
+      readerEl.appendChild(btn);
+    }
+  }
+
+  async function scanFrame() {
+    if (decoding || !videoEl || videoEl.readyState < 2) return;
+    const vw = videoEl.videoWidth;
+    const vh = videoEl.videoHeight;
+    if (!vw || !vh) return;
+    decoding = true;
+    try {
+      const sw = Math.floor(vw * GUIDE.w);
+      const sh = Math.floor(vh * GUIDE.h);
+      const sx = Math.floor((vw - sw) / 2);
+      const sy = Math.floor((vh - sh) / 2);
+      const scale = Math.min(1, MAX_DECODE_WIDTH / sw);
+      workCanvas.width = Math.round(sw * scale);
+      workCanvas.height = Math.round(sh * scale);
+      workCtx.drawImage(videoEl, sx, sy, sw, sh, 0, 0, workCanvas.width, workCanvas.height);
+      const result = await findIsbnInCanvas(workCanvas);
+      if (!isScanning) return;
+      if (result === "price") {
+        scanStatus.textContent = "下段のバーコードを読みました。上段（978…）のバーコードを写してください";
+      } else if (result) {
+        onScanSuccess(result);
+      }
+    } finally {
+      decoding = false;
     }
   }
 
   async function stopScan(statusMessage) {
-    if (scanner && isScanning) {
-      try {
-        await scanner.stop();
-        scanner.clear();
-      } catch (err) {
-        console.error(err);
-      }
+    clearInterval(scanTimer);
+    scanTimer = null;
+    if (stream) {
+      stream.getTracks().forEach((t) => t.stop());
+      stream = null;
     }
+    if (videoEl) {
+      videoEl.srcObject = null;
+      videoEl = null;
+    }
+    readerEl.innerHTML = "";
+    readerEl.classList.remove("is-active");
     isScanning = false;
     startBtn.hidden = false;
     stopBtn.hidden = true;
     scanStatus.textContent = statusMessage || "";
   }
 
-  function onScanSuccess(decodedText) {
-    const isbn = normalizeIsbn(decodedText);
-    if (!isbn || !isBookIsbn(isbn)) return; // 価格コードなどは無視
-
+  function onScanSuccess(isbn) {
     if (mode === "catalog") {
       const now = Date.now();
       if (lookupBusy) return;
@@ -189,6 +373,7 @@
       lastScan = { isbn, time: now };
       addIsbnToCatalog(isbn);
     } else {
+      vibrate(120);
       stopScan("読み取りました: " + isbn);
       lookupForPost(isbn);
     }
@@ -196,6 +381,89 @@
 
   startBtn.addEventListener("click", startScan);
   stopBtn.addEventListener("click", () => stopScan(""));
+  // 画面を離れたらカメラを止める（電池の消耗と、iPhone で映像が固まるのを防ぐ）
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && isScanning) stopScan("");
+  });
+
+  // ---------- 写真から読み取る ----------
+
+  const photoInput = $("photo-input");
+  photoInput.addEventListener("change", async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    clearError();
+    if (!hasDecoder()) {
+      showError("バーコード読み取りライブラリの読み込みに失敗しました。通信環境を確認してページを再読み込みしてください。");
+      return;
+    }
+    if (isScanning) await stopScan("");
+    scanStatus.textContent = "写真からバーコードを探しています...";
+    await setupNativeDetector();
+    let isbn = null;
+    try {
+      isbn = await decodePhoto(file);
+    } catch (err) {
+      console.error(err);
+    }
+    if (!isbn) {
+      scanStatus.textContent = "";
+      showError("写真からISBNバーコードを見つけられませんでした。バーコードが大きく写るように、ピントを合わせて撮り直してください。");
+      return;
+    }
+    scanStatus.textContent = "読み取りました: " + isbn;
+    if (mode === "catalog") {
+      addIsbnToCatalog(isbn);
+    } else {
+      lookupForPost(isbn);
+    }
+  });
+
+  // 写真を複数の大きさ・切り出し方で試し、978/979で始まるコードを探す
+  async function decodePhoto(file) {
+    const img = await loadImage(file);
+    try {
+      const W = img.naturalWidth;
+      const H = img.naturalHeight;
+      const crops = [
+        [0, 0, W, H],
+        [0, 0, W, H / 2],
+        [0, H / 4, W, H / 2],
+        [0, H / 2, W, H / 2],
+      ];
+      for (const maxSide of [1600, 1000, 2400]) {
+        for (const [sx, sy, sw, sh] of crops) {
+          const canvas = cropToCanvas(img, sx, sy, sw, sh, maxSide);
+          const result = await findIsbnInCanvas(canvas);
+          if (result && result !== "price") return result;
+          // 重い処理が続くので、画面が固まらないよう少し休む
+          await new Promise((r) => setTimeout(r, 0));
+        }
+      }
+      return null;
+    } finally {
+      URL.revokeObjectURL(img.src);
+    }
+  }
+
+  function loadImage(file) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = URL.createObjectURL(file);
+    });
+  }
+
+  function cropToCanvas(img, sx, sy, sw, sh, maxSide) {
+    const scale = Math.min(1, maxSide / Math.max(sw, sh));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(sw * scale);
+    canvas.height = Math.round(sh * scale);
+    canvas.getContext("2d").drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+    return canvas;
+  }
 
   manualForm.addEventListener("submit", (e) => {
     e.preventDefault();

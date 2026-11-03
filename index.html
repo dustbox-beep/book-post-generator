@@ -25,6 +25,10 @@
         <button id="start-scan-btn" class="btn btn-primary">📷 カメラでスキャン開始</button>
         <button id="stop-scan-btn" class="btn btn-secondary" hidden>スキャン停止</button>
       </div>
+      <label class="btn btn-secondary file-btn photo-btn">🖼️ 写真を撮って読み取る
+        <input type="file" id="photo-input" accept="image/*" capture="environment" hidden>
+      </label>
+      <p class="scan-tip">うまく読めないときは、本を20〜30cmほど離して、バーコードが枠の中央に横向きで収まるようにしてください。</p>
       <p id="scan-status" class="status-text"></p>
 
       <details class="manual-input">
@@ -120,7 +124,7 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
 <script src="script.js"></script>
 </body>
 </html>

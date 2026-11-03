@@ -70,7 +70,66 @@ main {
   border-radius: var(--radius);
   overflow: hidden;
   background: #000;
-  min-height: 1px;
+}
+
+#reader:not(.is-active) {
+  display: none;
+}
+
+#reader {
+  position: relative;
+}
+
+#reader video {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.scan-guide {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border: 3px solid rgba(255, 255, 255, 0.9);
+  border-radius: 10px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+.scan-line {
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  top: 50%;
+  height: 2px;
+  background: rgba(255, 80, 60, 0.85);
+}
+
+.zoom-btn {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  border: none;
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.photo-btn {
+  margin-top: 10px;
+  font-size: 0.95rem;
+  padding: 12px 16px;
+}
+
+.scan-tip {
+  margin: 10px 0 0;
+  font-size: 0.75rem;
+  color: var(--color-secondary);
+  line-height: 1.5;
 }
 
 .scan-controls {
