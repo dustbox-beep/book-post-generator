@@ -69,10 +69,14 @@
         <h2>蔵書目録</h2>
         <span id="catalog-count" class="catalog-count"></span>
       </div>
+      <div class="owned-tabs" role="tablist">
+        <button type="button" class="owned-tab is-active" data-owned="owned">持っている本 <span id="owned-count"></span></button>
+        <button type="button" class="owned-tab" data-owned="released">手放した本 <span id="released-count"></span></button>
+      </div>
       <div class="catalog-filters">
         <input type="search" id="catalog-search" placeholder="タイトル・著者・置き場所・メモで検索">
         <select id="catalog-status-filter">
-          <option value="">すべて</option>
+          <option value="">読書状態：すべて</option>
           <option value="未読">未読</option>
           <option value="読書中">読書中</option>
           <option value="読了">読了</option>
@@ -117,13 +121,25 @@
     <label>出版社<input type="text" id="edit-publisher"></label>
     <label>置き場所<input type="text" id="edit-location" list="location-options" placeholder="例: 書斎の本棚2段目"></label>
     <datalist id="location-options"></datalist>
-    <label>状態
-      <select id="edit-status">
-        <option value="未読">未読</option>
-        <option value="読書中">読書中</option>
-        <option value="読了">読了</option>
-      </select>
-    </label>
+    <div class="field-row">
+      <label>読書状態
+        <select id="edit-status">
+          <option value="未読">未読</option>
+          <option value="読書中">読書中</option>
+          <option value="読了">読了</option>
+        </select>
+      </label>
+      <label>所持
+        <select id="edit-owned">
+          <option value="owned">持っている</option>
+          <option value="released">手放した</option>
+        </select>
+      </label>
+    </div>
+    <div id="release-fields" class="release-fields" hidden>
+      <label>手放した日<input type="date" id="edit-released-at"></label>
+      <label>手放し方・売却先など<input type="text" id="edit-release-note" placeholder="例: ブックオフで売却 120円"></label>
+    </div>
     <label>内容紹介（あらすじ）<textarea id="edit-description" rows="5" placeholder="自動で見つからなかったときは、裏表紙のあらすじを貼り付けられます"></textarea></label>
     <details class="howto">
       <summary>iPhoneで裏表紙の文字を写す方法</summary>

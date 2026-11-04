@@ -48,6 +48,7 @@
   let lastScan = { isbn: "", time: 0 };
   let lookupBusy = false;
   let editingIsbn = null;
+  let ownedView = "owned"; // 目録で表示中：持っている本 / 手放した本
 
   // ---------- 共通ユーティリティ ----------
 
@@ -888,13 +889,20 @@
 
   function updateAddToCatalogBtn() {
     const exists = currentBook && findInCatalog(currentBook.isbn);
-    addToCatalogBtn.disabled = !!exists;
-    addToCatalogBtn.textContent = exists ? "✓ 目録に登録済み" : "＋ 目録に追加";
+    const released = exists && !isOwned(exists);
+    addToCatalogBtn.disabled = !!exists && !released;
+    addToCatalogBtn.textContent = released ? "↩ 手放した本を戻す" : exists ? "✓ 目録に登録済み" : "＋ 目録に追加";
   }
 
   addToCatalogBtn.addEventListener("click", () => {
     if (!currentBook) return;
-    if (addBookRecord(currentBook)) toast("目録に追加しました", "ok");
+    const exists = findInCatalog(currentBook.isbn);
+    if (exists && !isOwned(exists)) {
+      restoreOwnership(currentBook.isbn);
+      toast("持っている本に戻しました", "ok");
+    } else if (addBookRecord(currentBook)) {
+      toast("目録に追加しました", "ok");
+    }
     updateAddToCatalogBtn();
   });
 
@@ -1017,8 +1025,38 @@
       location: book.location || "",
       status: STATUSES.includes(book.status) ? book.status : "未読",
       memo: book.memo || "",
+      owned: book.owned !== false,
+      releasedAt: book.releasedAt || "",
+      releaseNote: book.releaseNote || "",
       addedAt: book.addedAt || new Date().toISOString(),
     };
+  }
+
+  // 古いデータには owned が無いので「持っている」とみなす
+  function isOwned(b) {
+    return b.owned !== false;
+  }
+
+  function todayStr() {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, "0");
+    return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+  }
+
+  // 手放した本を「持っている」に戻す。手放した記録はメモに残す
+  function restoreOwnership(isbn) {
+    const list = loadCatalog();
+    const b = list.find((x) => x.isbn === isbn);
+    if (!b) return null;
+    const history = "【" + (formatDate(b.releasedAt) || "日付不明") + " 手放した" + (b.releaseNote ? "：" + b.releaseNote : "") + "】";
+    b.memo = [b.memo, history].filter(Boolean).join("\n");
+    b.owned = true;
+    b.releasedAt = "";
+    b.releaseNote = "";
+    saveCatalog(list);
+    updateBadge();
+    if (mode === "catalog") renderCatalog();
+    return b;
   }
 
   // 追加できたら true、登録済みなら false
@@ -1027,7 +1065,7 @@
     if (list.some((b) => b.isbn === book.isbn)) return false;
     list.unshift(toRecord(book));
     if (!saveCatalog(list)) return false;
-    updateBadge(list.length);
+    updateBadge();
     if (mode === "catalog") renderCatalog();
     return true;
   }
@@ -1035,6 +1073,21 @@
   async function addIsbnToCatalog(isbn) {
     clearError();
     const existing = findInCatalog(isbn);
+    if (existing && !isOwned(existing)) {
+      vibrate([60, 60, 60]);
+      const when = formatDate(existing.releasedAt);
+      const ok = confirm(
+        "「" + existing.title + "」は" + (when ? when + "に" : "以前") + "手放した本です。\n" +
+          "また持っている本に戻しますか？（手放した記録はメモに残ります）"
+      );
+      if (ok) {
+        restoreOwnership(isbn);
+        toast("持っている本に戻しました: " + existing.title, "ok");
+      } else {
+        toast("以前手放した本です: " + existing.title, "warn");
+      }
+      return;
+    }
     if (existing) {
       vibrate([60, 60, 60]);
       toast("登録済み: " + existing.title, "warn");
@@ -1062,8 +1115,8 @@
     }
   }
 
-  function updateBadge(n) {
-    badgeEl.textContent = String(n === undefined ? loadCatalog().length : n);
+  function updateBadge() {
+    badgeEl.textContent = String(loadCatalog().filter(isOwned).length);
   }
 
   // ---------- 目録の表示 ----------
@@ -1072,23 +1125,29 @@
     const list = loadCatalog();
     const q = catalogSearch.value.trim().toLowerCase();
     const status = catalogStatusFilter.value;
-    const filtered = list.filter((b) => {
+    const ownedList = list.filter(isOwned);
+    const base = ownedView === "released" ? list.filter((b) => !isOwned(b)) : ownedList;
+    $("owned-count").textContent = ownedList.length + "冊";
+    $("released-count").textContent = list.length - ownedList.length + "冊";
+    const filtered = base.filter((b) => {
       if (status && b.status !== status) return false;
       if (!q) return true;
-      return [b.title, b.author, b.publisher, b.series, b.genre, b.form, b.location, b.memo, b.isbn]
+      return [b.title, b.author, b.publisher, b.series, b.genre, b.form, b.location, b.memo, b.releaseNote, b.isbn]
         .join(" ")
         .toLowerCase()
         .includes(q);
     });
 
-    updateBadge(list.length);
+    updateBadge();
     catalogCount.textContent =
-      filtered.length === list.length ? list.length + "冊" : filtered.length + " / " + list.length + "冊";
+      filtered.length === base.length ? base.length + "冊" : filtered.length + " / " + base.length + "冊";
 
     catalogList.innerHTML = "";
     catalogEmpty.hidden = filtered.length > 0;
-    catalogEmpty.textContent = list.length
+    catalogEmpty.textContent = base.length
       ? "条件に合う本がありません。"
+      : ownedView === "released"
+      ? "手放した本はありません。本の編集画面で「所持」を「手放した」にすると、ここに移ります。"
       : "まだ登録がありません。上のボタンからスキャンを始めてください。";
 
     const frag = document.createDocumentFragment();
@@ -1116,6 +1175,13 @@
         tag.textContent = t;
         meta.appendChild(tag);
       });
+      if (!isOwned(b)) {
+        li.classList.add("is-released");
+        const rel = document.createElement("span");
+        rel.className = "c-released";
+        rel.textContent = "手放した" + (b.releasedAt ? " " + formatDate(b.releasedAt) : "");
+        meta.appendChild(rel);
+      }
       if (b.location) {
         const loc = document.createElement("span");
         loc.textContent = "📍" + b.location;
@@ -1133,6 +1199,14 @@
   catalogSearch.addEventListener("input", renderCatalog);
   catalogStatusFilter.addEventListener("change", renderCatalog);
 
+  document.querySelectorAll(".owned-tab").forEach((t) =>
+    t.addEventListener("click", () => {
+      ownedView = t.dataset.owned;
+      document.querySelectorAll(".owned-tab").forEach((x) => x.classList.toggle("is-active", x === t));
+      renderCatalog();
+    })
+  );
+
   // ---------- 編集 ----------
 
   function openEditor(isbn) {
@@ -1144,6 +1218,10 @@
     $("edit-publisher").value = b.publisher || "";
     $("edit-location").value = b.location || "";
     $("edit-status").value = STATUSES.includes(b.status) ? b.status : "未読";
+    $("edit-owned").value = isOwned(b) ? "owned" : "released";
+    $("edit-released-at").value = b.releasedAt || "";
+    $("edit-release-note").value = b.releaseNote || "";
+    toggleReleaseFields();
     $("edit-memo").value = b.memo || "";
     $("edit-description").value = b.description || "";
     $("edit-meta").textContent =
@@ -1161,6 +1239,13 @@
 
     editDialog.showModal();
   }
+
+  function toggleReleaseFields() {
+    const released = $("edit-owned").value === "released";
+    $("release-fields").hidden = !released;
+    if (released && !$("edit-released-at").value) $("edit-released-at").value = todayStr();
+  }
+  $("edit-owned").addEventListener("change", toggleReleaseFields);
 
   function renderEditDetails(b) {
     const box = $("edit-details");
@@ -1256,7 +1341,13 @@
       b.status = $("edit-status").value;
       b.memo = $("edit-memo").value.trim();
       b.description = $("edit-description").value.trim();
+      const wasOwned = isOwned(b);
+      b.owned = $("edit-owned").value !== "released";
+      b.releasedAt = b.owned ? "" : $("edit-released-at").value || todayStr();
+      b.releaseNote = b.owned ? "" : $("edit-release-note").value.trim();
       saveCatalog(list);
+      if (wasOwned && !b.owned) toast("「手放した本」に移しました");
+      if (!wasOwned && b.owned) toast("「持っている本」に戻しました", "ok");
     }
     editDialog.close();
     renderCatalog();
@@ -1304,7 +1395,7 @@
       backupStatus.textContent = "書き出す本がありません";
       return;
     }
-    const header = ["タイトル", "著者", "出版社", "発売日", "価格", "ページ数", "判型", "ジャンル", "シリーズ", "ISBN", "置き場所", "状態", "メモ", "登録日", "内容紹介"];
+    const header = ["タイトル", "著者", "出版社", "発売日", "価格", "ページ数", "判型", "ジャンル", "シリーズ", "ISBN", "置き場所", "状態", "所持", "手放した日", "手放し方・売却先", "メモ", "登録日", "内容紹介"];
     const ISBN_COL = header.indexOf("ISBN");
     const rows = list.map((b) => [
       b.title,
@@ -1320,6 +1411,9 @@
       '="' + b.isbn + '"',
       b.location,
       b.status,
+      isOwned(b) ? "持っている" : "手放した",
+      formatDate(b.releasedAt),
+      b.releaseNote || "",
       b.memo,
       new Date(b.addedAt).toLocaleDateString("ja-JP"),
       b.description || "",
