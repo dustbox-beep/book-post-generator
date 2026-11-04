@@ -450,31 +450,48 @@
     // 優先順：openBD → 国立国会図書館 → Google
     const order = { openbd: 0, ndl: 1, google: 2 };
     found.sort((a, b) => order[a.source] - order[b.source]);
-    const book = { isbn, sources: found.map((f) => f.source) };
+    const book = { isbn };
+    // 項目ごとに、実際に使った情報源を記録する
+    const fieldSources = {};
     FIELDS.forEach((k) => {
       const hit = found.find((f) => f[k]);
       book[k] = hit ? hit[k] : "";
+      if (hit) fieldSources[k] = hit.source;
     });
     // 表紙：openBD に無ければ国立国会図書館の書影、それも無ければ Google
     // （Google の画像は日本の本だと「画像なし」の絵のことが多いので最後にする）
     const primaryCover = found.find((f) => f.source === "openbd" && f.cover);
     if (primaryCover) {
       book.cover = primaryCover.cover;
+      fieldSources.cover = "openbd";
     } else if (await imageExists(ndlThumbnailUrl(isbn))) {
       book.cover = ndlThumbnailUrl(isbn);
-      if (!book.sources.includes("ndl")) book.sources.push("ndl");
+      fieldSources.cover = "ndl";
     } else {
       const g = found.find((f) => f.source === "google" && f.cover);
       book.cover = g ? g.cover : "";
+      if (g) fieldSources.cover = "google";
+      else delete fieldSources.cover;
     }
     // openBD の著者が図書館式（例：筒井,康隆,1934-）だった場合は、他の情報源の表記を優先
     const rawOb = found.find((f) => f.source === "openbd");
     if (rawOb && rawOb.rawAuthorLibraryStyle) {
       const alt = found.find((f) => f.source !== "openbd" && f.author);
-      if (alt) book.author = alt.author;
+      if (alt) {
+        book.author = alt.author;
+        fieldSources.author = alt.source;
+      }
     }
     if (!book.title) book.title = "(タイトル不明)";
+    book.fieldSources = fieldSources;
+    book.sources = sourcesUsed(fieldSources);
     return book;
+  }
+
+  // 実際に使った情報源を、優先順に並べて返す
+  function sourcesUsed(fieldSources) {
+    const used = new Set(Object.values(fieldSources));
+    return ["openbd", "ndl", "google"].filter((x) => used.has(x));
   }
 
   // 画像が実際に読み込めるか確かめる（存在しない書影を表紙にしないため）
@@ -1023,7 +1040,15 @@
         }
       }
     });
-    record.sources = [...new Set([...(record.sources || []), ...(fresh.sources || [])])];
+    // 情報元は「いま目録に入っている値」がどこから来たかで決め直す
+    // （手で直した項目は一致しないので数えない。以前の版の「見つかった情報源すべて」の表示もここで直る）
+    const fs = fresh.fieldSources || {};
+    const attributed = {};
+    FIELDS.forEach((k) => {
+      if (record[k] && fs[k] && record[k] === fresh[k]) attributed[k] = fs[k];
+    });
+    const recomputed = sourcesUsed(attributed);
+    if (recomputed.length) record.sources = recomputed;
     return changed;
   }
 
