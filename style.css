@@ -204,161 +204,10 @@ main {
   padding: 12px 18px;
 }
 
-.book-info {
-  display: flex;
-  gap: 14px;
-}
-
-.book-info img {
-  width: 96px;
-  height: 140px;
-  object-fit: cover;
-  border-radius: 8px;
-  background: var(--color-border);
-  flex-shrink: 0;
-}
-
-.book-info .no-cover {
-  width: 96px;
-  height: 140px;
-  border-radius: 8px;
-  background: var(--color-border);
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.75rem;
-  color: var(--color-secondary);
-  text-align: center;
-  padding: 4px;
-}
-
-.book-info dl {
-  margin: 0;
-  font-size: 0.9rem;
-  line-height: 1.5;
-}
-
-.book-info dt {
-  font-weight: 600;
-  color: var(--color-secondary);
-  font-size: 0.75rem;
-  margin-top: 8px;
-}
-
-.book-info dt:first-child {
-  margin-top: 0;
-}
-
-.book-info dd {
-  margin: 0;
-}
-
-#post-text {
-  width: 100%;
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-  padding: 12px;
-  font-size: 0.95rem;
-  font-family: inherit;
-  line-height: 1.6;
-  resize: vertical;
-}
-
-.copy-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 10px;
-}
-
-.copy-row .btn {
-  flex: none;
-}
-
 .error-text {
   color: var(--color-error);
   margin: 0;
   font-size: 0.9rem;
-}
-
-.history-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.history-list li {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-  cursor: pointer;
-  font-size: 0.9rem;
-}
-
-.history-list li:active {
-  background: var(--color-bg);
-}
-
-.history-list .h-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.history-list .h-remove {
-  border: none;
-  background: none;
-  color: var(--color-secondary);
-  font-size: 1.1rem;
-  padding: 0 4px;
-  cursor: pointer;
-}
-
-/* ---------- タブ ---------- */
-.tabs {
-  display: flex;
-  gap: 6px;
-  margin: 0 16px 16px;
-  padding: 4px;
-  background: var(--color-border);
-  border-radius: 12px;
-}
-
-.tab {
-  flex: 1;
-  border: none;
-  background: none;
-  padding: 10px 8px;
-  border-radius: 9px;
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--color-secondary);
-  cursor: pointer;
-}
-
-.tab.is-active {
-  background: var(--color-surface);
-  color: var(--color-text);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-}
-
-.badge {
-  display: inline-block;
-  min-width: 1.6em;
-  padding: 1px 6px;
-  margin-left: 2px;
-  border-radius: 999px;
-  background: var(--color-primary);
-  color: #fff;
-  font-size: 0.75rem;
 }
 
 .btn:disabled {
@@ -584,11 +433,6 @@ main {
 .toast-warn { background: #a8590f; }
 
 /* ---------- 詳細・設定 ---------- */
-.book-info dd.src {
-  font-size: 0.75rem;
-  color: var(--color-secondary);
-}
-
 .c-tag {
   padding: 1px 8px;
   border-radius: 999px;

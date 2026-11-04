@@ -1,11 +1,7 @@
 (() => {
   "use strict";
 
-  const HASHTAGS = "#読書 #読書記録 #読書好きな人と繋がりたい #本 #book #bookstagram #読了 #本好き";
-  const HISTORY_KEY = "book-scan-history";
-  const HISTORY_LIMIT = 30;
   const CATALOG_KEY = "book-catalog";
-  const MODE_KEY = "book-scan-mode";
   const SAME_ISBN_COOLDOWN_MS = 4000;
   const STATUSES = ["未読", "読書中", "読了"];
 
@@ -17,21 +13,8 @@
   const scanStatus = $("scan-status");
   const manualForm = $("manual-form");
   const manualInput = $("manual-isbn");
-  const resultSection = $("result-section");
-  const bookInfoEl = $("book-info");
-  const postTextEl = $("post-text");
-  const copyBtn = $("copy-btn");
-  const copyStatus = $("copy-status");
-  const addToCatalogBtn = $("add-to-catalog-btn");
   const errorSection = $("error-section");
   const errorMessageEl = $("error-message");
-  const historySection = $("history-section");
-  const historyList = $("history-list");
-  const subtitleEl = $("mode-subtitle");
-  const tabs = document.querySelectorAll(".tab");
-  const badgeEl = $("catalog-count-badge");
-  const catalogSection = $("catalog-section");
-  const backupSection = $("backup-section");
   const catalogList = $("catalog-list");
   const catalogEmpty = $("catalog-empty");
   const catalogCount = $("catalog-count");
@@ -43,8 +26,6 @@
   const toastEl = $("toast");
 
   let isScanning = false;
-  let mode = "post";
-  let currentBook = null;
   let lastScan = { isbn: "", time: 0 };
   let lookupBusy = false;
   let editingIsbn = null;
@@ -101,38 +82,8 @@
     return /^97[89]\d{10}$/.test(isbn);
   }
 
-  // ---------- モード切替 ----------
-
-  function setMode(next) {
-    mode = next;
-    try {
-      localStorage.setItem(MODE_KEY, mode);
-    } catch {}
-    tabs.forEach((t) => t.classList.toggle("is-active", t.dataset.mode === mode));
-    clearError();
-    if (mode === "catalog") {
-      subtitleEl.textContent = "バーコードを続けて読み取ると目録に登録されます";
-      resultSection.hidden = true;
-      historySection.hidden = true;
-      catalogSection.hidden = false;
-      backupSection.hidden = false;
-      renderCatalog();
-    } else {
-      subtitleEl.textContent = "ISBNバーコードをスキャンして投稿文を作成";
-      catalogSection.hidden = true;
-      backupSection.hidden = true;
-      resultSection.hidden = !currentBook;
-      renderHistory();
-    }
-    if (isScanning) scanStatus.textContent = scanHint();
-  }
-
-  tabs.forEach((t) => t.addEventListener("click", () => setMode(t.dataset.mode)));
-
   function scanHint() {
-    return mode === "catalog"
-      ? "続けてバーコードを読み取れます（1冊ずつ枠内に）"
-      : "本の裏表紙のバーコードを枠内に写してください";
+    return "続けてバーコードを読み取れます（1冊ずつ枠内に）";
   }
 
   // ---------- スキャン ----------
@@ -367,17 +318,11 @@
   }
 
   function onScanSuccess(isbn) {
-    if (mode === "catalog") {
-      const now = Date.now();
-      if (lookupBusy) return;
-      if (isbn === lastScan.isbn && now - lastScan.time < SAME_ISBN_COOLDOWN_MS) return;
-      lastScan = { isbn, time: now };
-      addIsbnToCatalog(isbn);
-    } else {
-      vibrate(120);
-      stopScan("読み取りました: " + isbn);
-      lookupForPost(isbn);
-    }
+    const now = Date.now();
+    if (lookupBusy) return;
+    if (isbn === lastScan.isbn && now - lastScan.time < SAME_ISBN_COOLDOWN_MS) return;
+    lastScan = { isbn, time: now };
+    addIsbnToCatalog(isbn);
   }
 
   startBtn.addEventListener("click", startScan);
@@ -414,11 +359,7 @@
       return;
     }
     scanStatus.textContent = "読み取りました: " + isbn;
-    if (mode === "catalog") {
-      addIsbnToCatalog(isbn);
-    } else {
-      lookupForPost(isbn);
-    }
+    addIsbnToCatalog(isbn);
   });
 
   // 写真を複数の大きさ・切り出し方で試し、978/979で始まるコードを探す
@@ -474,11 +415,7 @@
       return;
     }
     manualInput.value = "";
-    if (mode === "catalog") {
-      addIsbnToCatalog(isbn);
-    } else {
-      lookupForPost(isbn);
-    }
+    addIsbnToCatalog(isbn);
   });
 
   // ---------- 書誌情報の取得 ----------
@@ -766,36 +703,7 @@
     return a;
   }
 
-  // ---------- 投稿文モード ----------
-
-  async function lookupForPost(isbn) {
-    clearError();
-    resultSection.hidden = true;
-    scanStatus.textContent = "書誌情報を取得中...";
-    try {
-      const book = await fetchBook(isbn);
-      scanStatus.textContent = "";
-      if (!book) {
-        showError("ISBN " + isbn + " の書誌情報が見つかりませんでした。");
-        return;
-      }
-      renderBook(book);
-      saveToHistory(book);
-    } catch (err) {
-      console.error(err);
-      showError("書誌情報の取得に失敗しました。通信状況をご確認のうえ再度お試しください。");
-      scanStatus.textContent = "";
-    }
-  }
-
-  function buildPostText(book) {
-    const lines = [];
-    lines.push(book.title);
-    if (book.author) lines.push(book.author);
-    lines.push("");
-    lines.push(HASHTAGS);
-    return lines.join("\n");
-  }
+  // ---------- 表示用の部品 ----------
 
   function coverElement(book, className) {
     if (book.cover) {
@@ -816,130 +724,6 @@
     div.className = (className ? className + " " : "") + "no-cover";
     div.textContent = "表紙なし";
     return div;
-  }
-
-  function renderBook(book) {
-    currentBook = book;
-    bookInfoEl.innerHTML = "";
-    bookInfoEl.appendChild(coverElement(book));
-
-    const dl = document.createElement("dl");
-    dl.innerHTML =
-      "<dt>タイトル</dt><dd>" + escapeHtml(book.title) + "</dd>" +
-      "<dt>著者</dt><dd>" + escapeHtml(book.author || "-") + "</dd>" +
-      "<dt>出版社</dt><dd>" + escapeHtml(book.publisher || "-") + "</dd>" +
-      detailRows(book).map((r) => "<dt>" + r[0] + "</dt><dd>" + escapeHtml(r[1]) + "</dd>").join("") +
-      "<dt>ISBN</dt><dd>" + escapeHtml(book.isbn) + "</dd>" +
-      sourceLine(book);
-    const ddLink = document.createElement("dd");
-    ddLink.appendChild(hanmotoLink(book.isbn));
-    dl.appendChild(ddLink);
-    bookInfoEl.appendChild(dl);
-
-    postTextEl.value = buildPostText(book);
-    copyStatus.textContent = "";
-    updateAddToCatalogBtn();
-    resultSection.hidden = false;
-    resultSection.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
-
-  function sourceLine(book) {
-    const names = (book.sources || []).map((x) => SOURCE_NAMES[x]).filter(Boolean);
-    return names.length ? "<dt>情報元</dt><dd class=\"src\">" + escapeHtml(names.join("・")) + "</dd>" : "";
-  }
-
-  function updateAddToCatalogBtn() {
-    const exists = currentBook && findInCatalog(currentBook.isbn);
-    const released = exists && !isOwned(exists);
-    addToCatalogBtn.disabled = !!exists && !released;
-    addToCatalogBtn.textContent = released ? "↩ 手放した本を戻す" : exists ? "✓ 目録に登録済み" : "＋ 目録に追加";
-  }
-
-  addToCatalogBtn.addEventListener("click", () => {
-    if (!currentBook) return;
-    const exists = findInCatalog(currentBook.isbn);
-    if (exists && !isOwned(exists)) {
-      restoreOwnership(currentBook.isbn);
-      toast("持っている本に戻しました", "ok");
-    } else if (addBookRecord(currentBook)) {
-      toast("目録に追加しました", "ok");
-    }
-    updateAddToCatalogBtn();
-  });
-
-  copyBtn.addEventListener("click", async () => {
-    const text = postTextEl.value;
-    try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        postTextEl.select();
-        document.execCommand("copy");
-        window.getSelection().removeAllRanges();
-      }
-      copyStatus.textContent = "コピーしました！";
-    } catch (err) {
-      console.error(err);
-      copyStatus.textContent = "コピーに失敗しました";
-    }
-    setTimeout(() => {
-      copyStatus.textContent = "";
-    }, 2500);
-  });
-
-  function loadHistory() {
-    try {
-      return JSON.parse(localStorage.getItem(HISTORY_KEY)) || [];
-    } catch {
-      return [];
-    }
-  }
-
-  function saveToHistory(book) {
-    let history = loadHistory().filter((b) => b.isbn !== book.isbn);
-    history.unshift(book);
-    history = history.slice(0, HISTORY_LIMIT);
-    try {
-      localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-    } catch (err) {
-      console.error(err);
-    }
-    renderHistory();
-  }
-
-  function removeFromHistory(isbn) {
-    const history = loadHistory().filter((b) => b.isbn !== isbn);
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-    renderHistory();
-  }
-
-  function renderHistory() {
-    const history = loadHistory();
-    historyList.innerHTML = "";
-    if (history.length === 0 || mode !== "post") {
-      historySection.hidden = true;
-      return;
-    }
-    historySection.hidden = false;
-    history.forEach((book) => {
-      const li = document.createElement("li");
-      const span = document.createElement("span");
-      span.className = "h-title";
-      span.textContent = book.title;
-      span.addEventListener("click", () => renderBook(book));
-
-      const removeBtn = document.createElement("button");
-      removeBtn.className = "h-remove";
-      removeBtn.textContent = "✕";
-      removeBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        removeFromHistory(book.isbn);
-      });
-
-      li.appendChild(span);
-      li.appendChild(removeBtn);
-      historyList.appendChild(li);
-    });
   }
 
   // ---------- 目録データ ----------
@@ -1014,8 +798,7 @@
     b.releasedAt = "";
     b.releaseNote = "";
     saveCatalog(list);
-    updateBadge();
-    if (mode === "catalog") renderCatalog();
+    renderCatalog();
     return b;
   }
 
@@ -1025,8 +808,7 @@
     if (list.some((b) => b.isbn === book.isbn)) return false;
     list.unshift(toRecord(book));
     if (!saveCatalog(list)) return false;
-    updateBadge();
-    if (mode === "catalog") renderCatalog();
+    renderCatalog();
     return true;
   }
 
@@ -1075,10 +857,6 @@
     }
   }
 
-  function updateBadge() {
-    badgeEl.textContent = String(loadCatalog().filter(isOwned).length);
-  }
-
   // ---------- 目録の表示 ----------
 
   function renderCatalog() {
@@ -1098,7 +876,6 @@
         .includes(q);
     });
 
-    updateBadge();
     catalogCount.textContent =
       filtered.length === base.length ? base.length + "冊" : filtered.length + " / " + base.length + "冊";
 
@@ -1508,36 +1285,30 @@
       (failed ? "（" + failed + "冊は通信エラー）" : "");
     bulkRunning = false;
     btn.textContent = "🔄 まとめて情報を補う";
-    if (mode === "catalog") renderCatalog();
+    renderCatalog();
   });
 
   // ---------- 起動 ----------
 
-  // 以前の版で保存していた内容紹介を取り除く（目録・スキャン履歴とも）
+  // 以前の版で目録に保存していた内容紹介を取り除く
   (function dropStoredDescriptions() {
     const list = loadCatalog();
     if (list.some((b) => "description" in b)) {
       list.forEach((b) => delete b.description);
       saveCatalog(list);
     }
-    const history = loadHistory();
-    if (history.some((b) => "description" in b)) {
-      history.forEach((b) => delete b.description);
-      try {
-        localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-      } catch {}
-    }
   })();
+
+  // 投稿文作成の機能は廃止したので、そのために保存していたデータを消す
+  try {
+    localStorage.removeItem("book-scan-history");
+    localStorage.removeItem("book-scan-mode");
+  } catch {}
 
   // 以前の版で保存されていた楽天の設定が残っていれば消す
   try {
     localStorage.removeItem("rakuten-settings");
   } catch {}
 
-  updateBadge();
-  let savedMode = "post";
-  try {
-    savedMode = localStorage.getItem(MODE_KEY) || "post";
-  } catch {}
-  setMode(savedMode === "catalog" ? "catalog" : "post");
+  renderCatalog();
 })();
