@@ -1384,6 +1384,11 @@
     return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate());
   }
 
+  // Excel で行が高くならないよう、改行をスペースに置き換えて1行にする
+  function oneLine(v) {
+    return String(v || "").replace(/\s*[\r\n]+\s*/g, " ").trim();
+  }
+
   function csvCell(v) {
     const s = String(v == null ? "" : v);
     return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
@@ -1414,9 +1419,9 @@
       isOwned(b) ? "持っている" : "手放した",
       formatDate(b.releasedAt),
       b.releaseNote || "",
-      b.memo,
+      oneLine(b.memo),
       new Date(b.addedAt).toLocaleDateString("ja-JP"),
-      b.description || "",
+      oneLine(b.description),
     ]);
     const csv = [header, ...rows]
       .map((r, i) => r.map((c, j) => (i > 0 && j === ISBN_COL ? c : csvCell(c))).join(","))
