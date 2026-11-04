@@ -576,6 +576,32 @@ main {
   line-height: 1.5;
 }
 
+.reminder {
+  background: #fff4e0;
+  border: 1px solid #f0d2a0;
+}
+
+.reminder p {
+  margin: 0 0 10px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.reminder-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.backup-meta {
+  margin: 4px 0 0;
+  text-align: center;
+}
+
+.backup-meta:empty {
+  display: none;
+}
+
 @media (min-width: 600px) {
   .app {
     max-width: 560px;

@@ -878,6 +878,7 @@
 
   function renderCatalog() {
     const list = loadCatalog();
+    if (document.getElementById("backup-reminder")) renderBackupReminder();
     const q = catalogSearch.value.trim().toLowerCase();
     const status = catalogStatusFilter.value;
     const ownedList = list.filter(isOwned);
@@ -1199,8 +1200,31 @@
 
   // iCloud Drive などに同じ名前で上書き保存できるよう、ファイル名は固定にする
   const XLSX_FILENAME = "蔵書目録.xlsx";
+  const BACKUP_FILENAME = "蔵書バックアップ.json";
+  const LAST_BACKUP_KEY = "last-backup-at";
+  const SNOOZE_KEY = "backup-reminder-snooze-until";
+  const BACKUP_REMIND_DAYS = 14;
+  const SNOOZE_DAYS = 3;
+  const DAY_MS = 24 * 60 * 60 * 1000;
 
-  $("export-xlsx-btn").addEventListener("click", async () => {
+  function backupJson(list) {
+    return JSON.stringify(
+      { app: "book-post-generator", version: 1, exportedAt: new Date().toISOString(), books: list },
+      null,
+      2
+    );
+  }
+
+  function markBackedUp() {
+    try {
+      localStorage.setItem(LAST_BACKUP_KEY, new Date().toISOString());
+      localStorage.removeItem(SNOOZE_KEY);
+    } catch {}
+    renderBackupReminder();
+  }
+
+  // Excel（見る用）とバックアップ（戻す用）を一緒に書き出す
+  async function exportExcelAndBackup() {
     const list = loadCatalog();
     if (!list.length) {
       backupStatus.textContent = "書き出す本がありません";
@@ -1210,38 +1234,109 @@
       backupStatus.textContent = "Excel書き出しの部品を読み込めませんでした。ページを再読み込みしてください";
       return;
     }
-    const blob = XlsxWriter.build({
-      sheetName: "蔵書目録",
-      columns: EXPORT_COLUMNS,
-      rows: exportRows(list),
-    });
-    const file = new File([blob], XLSX_FILENAME, { type: blob.type });
-    // iPhone では共有画面を開き、「"ファイル"に保存」から iCloud Drive に保存できる
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    const xlsx = XlsxWriter.build({ sheetName: "蔵書目録", columns: EXPORT_COLUMNS, rows: exportRows(list) });
+    const json = new Blob([backupJson(list)], { type: "application/json" });
+    const files = [
+      new File([xlsx], XLSX_FILENAME, { type: xlsx.type }),
+      new File([json], BACKUP_FILENAME, { type: "application/json" }),
+    ];
+    const done = () => {
+      markBackedUp();
+      backupStatus.textContent = list.length + "冊分のExcelとバックアップを書き出しました";
+    };
+    // iPhone では共有画面を開き、「"ファイル"に保存」やショートカットで iCloud Drive に保存できる
+    if (navigator.canShare && navigator.canShare({ files })) {
       try {
-        await navigator.share({ files: [file], title: "蔵書目録" });
-        backupStatus.textContent = list.length + "冊をExcelで書き出しました";
+        await navigator.share({ files, title: "蔵書目録" });
+        done();
       } catch (err) {
         if (err && err.name === "AbortError") {
           backupStatus.textContent = "書き出しをキャンセルしました";
-        } else {
-          console.error(err);
-          download(XLSX_FILENAME, blob, blob.type);
-          backupStatus.textContent = list.length + "冊をExcelで書き出しました";
+          return;
         }
+        console.error(err);
+        download(XLSX_FILENAME, xlsx, xlsx.type);
+        download(BACKUP_FILENAME, json, "application/json");
+        done();
       }
       return;
     }
-    download(XLSX_FILENAME, blob, blob.type);
-    backupStatus.textContent = list.length + "冊をExcelで書き出しました";
-  });
+    download(XLSX_FILENAME, xlsx, xlsx.type);
+    download(BACKUP_FILENAME, json, "application/json");
+    done();
+  }
+
+  $("export-xlsx-btn").addEventListener("click", exportExcelAndBackup);
 
   $("export-json-btn").addEventListener("click", () => {
     const list = loadCatalog();
-    const payload = { app: "book-post-generator", version: 1, exportedAt: new Date().toISOString(), books: list };
-    download("蔵書バックアップ_" + dateStamp() + ".json", JSON.stringify(payload, null, 2), "application/json");
+    download("蔵書バックアップ_" + dateStamp() + ".json", backupJson(list), "application/json");
+    markBackedUp();
     backupStatus.textContent = list.length + "冊をバックアップしました";
   });
+
+  // ---------- バックアップのお知らせ ----------
+
+  function readTime(key) {
+    try {
+      const v = localStorage.getItem(key);
+      const t = v ? Date.parse(v) : NaN;
+      return isNaN(t) ? null : t;
+    } catch {
+      return null;
+    }
+  }
+
+  function renderBackupReminder() {
+    const box = $("backup-reminder");
+    const list = loadCatalog();
+    const last = readTime(LAST_BACKUP_KEY);
+    const snoozeUntil = readTime(SNOOZE_KEY);
+    const now = Date.now();
+    $("last-backup").textContent = last
+      ? "前回のバックアップ：" + new Date(last).toLocaleDateString("ja-JP")
+      : "まだバックアップしていません";
+    let message = "";
+    if (list.length && !last) {
+      message = "まだバックアップしていません。万一に備えて、iCloudに保存しておきましょう。";
+    } else if (list.length && now - last >= BACKUP_REMIND_DAYS * DAY_MS) {
+      const days = Math.floor((now - last) / DAY_MS);
+      message = "前回のバックアップから" + days + "日たちました。iCloudに保存しておきましょう。";
+    }
+    if (!message || (snoozeUntil && now < snoozeUntil)) {
+      box.hidden = true;
+      return;
+    }
+    $("backup-reminder-text").textContent = message;
+    box.hidden = false;
+  }
+
+  $("backup-reminder-now").addEventListener("click", exportExcelAndBackup);
+  $("backup-reminder-later").addEventListener("click", () => {
+    try {
+      localStorage.setItem(SNOOZE_KEY, new Date(Date.now() + SNOOZE_DAYS * DAY_MS).toISOString());
+    } catch {}
+    renderBackupReminder();
+  });
+
+  // 端末の容量が足りなくなっても、このアプリのデータを自動で消さないよう申請する
+  async function requestPersistentStorage() {
+    const el = $("storage-persist");
+    try {
+      if (!navigator.storage || !navigator.storage.persist) {
+        el.textContent = "";
+        return;
+      }
+      let persisted = await navigator.storage.persisted();
+      if (!persisted) persisted = await navigator.storage.persist();
+      el.textContent = persisted
+        ? "🔒 この端末に、データを自動で消さないよう設定済みです"
+        : "※ この端末では自動削除を止める設定が使えないため、バックアップを定期的に保存してください";
+    } catch (err) {
+      console.error(err);
+      el.textContent = "";
+    }
+  }
 
   $("import-json-input").addEventListener("change", async (e) => {
     const file = e.target.files && e.target.files[0];
@@ -1336,4 +1431,6 @@
   } catch {}
 
   renderCatalog();
+  renderBackupReminder();
+  requestPersistentStorage();
 })();

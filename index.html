@@ -39,6 +39,14 @@
       <p id="error-message" class="error-text"></p>
     </section>
 
+    <section class="card reminder" id="backup-reminder" hidden>
+      <p id="backup-reminder-text"></p>
+      <div class="reminder-actions">
+        <button type="button" id="backup-reminder-now" class="btn btn-primary">今すぐ保存</button>
+        <button type="button" id="backup-reminder-later" class="btn btn-secondary">あとで</button>
+      </div>
+    </section>
+
     <section class="card" id="catalog-section">
       <div class="catalog-head">
         <h2>蔵書目録</h2>
@@ -63,25 +71,28 @@
 
     <section class="card" id="backup-section">
       <h2>書き出し・バックアップ</h2>
-      <p class="note">データはこの端末のブラウザ内に保存されています。ブラウザのデータ消去で消えるため、こまめにバックアップしてください。</p>
+      <p class="note">目録の正式なデータは、このiPhoneの中にだけあります。消えてしまったときに戻せるのは「バックアップ」（.json）だけなので、Excelと一緒にiCloudへ保存しておきましょう。</p>
       <div class="btn-grid">
-        <button id="export-xlsx-btn" class="btn btn-primary">📗 Excelで書き出し<br><small>（iCloud Driveに保存できます）</small></button>
+        <button id="export-xlsx-btn" class="btn btn-primary">📗 Excel＋バックアップを保存<br><small>（iCloud Driveに保存できます）</small></button>
         <button id="export-csv-btn" class="btn btn-secondary">📄 CSVで書き出し</button>
-        <button id="export-json-btn" class="btn btn-secondary">💾 バックアップ保存</button>
-        <label class="btn btn-secondary file-btn">📂 バックアップ読込
+        <button id="export-json-btn" class="btn btn-secondary">💾 バックアップだけ保存</button>
+        <label class="btn btn-secondary file-btn">📂 バックアップから復元
           <input type="file" id="import-json-input" accept="application/json,.json" hidden>
         </label>
       </div>
       <p id="backup-status" class="status-text"></p>
+      <p id="last-backup" class="note backup-meta"></p>
+      <p id="storage-persist" class="note backup-meta"></p>
       <details class="howto-save">
-        <summary>iCloud Driveの同じファイルを更新する方法</summary>
+        <summary>iCloud Driveの同じファイルを上書きする方法</summary>
+        <p>iPhoneの「"ファイル"に保存」は、同じ名前があると「蔵書目録 2.xlsx」のように別名で保存します。上書きするには「ショートカット」アプリを使います（初回だけ設定）。</p>
         <ol>
-          <li>「Excelで書き出し」を押す</li>
-          <li>共有画面で「"ファイル"に保存」を選ぶ</li>
-          <li>iCloud Driveで、前回と同じフォルダを選んで「保存」</li>
-          <li>「置き換えますか？」と聞かれたら「置き換える」を選ぶ</li>
+          <li>「ショートカット」アプリで「＋」を押し、「ファイルを保存」を追加</li>
+          <li>「保存先を尋ねる」をオフにし、保存先に「book」など保存したいフォルダを選ぶ</li>
+          <li>サブパス（ファイル名）は<strong>空欄のまま</strong>にし、「上書き」をオンにする</li>
+          <li>下の「ⓘ」で「共有シートに表示」をオンにし、名前を「蔵書目録を保存」にして完了</li>
         </ol>
-        <p>ファイル名は毎回「蔵書目録.xlsx」なので、同じ場所に保存すれば常に最新の1ファイルになります。</p>
+        <p>以後は「Excel＋バックアップを保存」を押し、共有画面で「蔵書目録を保存」を選ぶだけで、「蔵書目録.xlsx」と「蔵書バックアップ.json」の2つが最新の内容に置き換わります。</p>
       </details>
     </section>
 
