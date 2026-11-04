@@ -757,7 +757,9 @@
     return m ? m[1] : "";
   }
 
-  function formatDate(d) {
+  function formatDate(raw) {
+    // 古い版で保存した「200211」のような形式もここでそろえる
+    const d = normalizeDate(raw);
     if (!d) return "";
     const p = d.split("-");
     return p[0] + "年" + (p[1] ? Number(p[1]) + "月" : "") + (p[2] ? Number(p[2]) + "日" : "");
