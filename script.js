@@ -484,8 +484,7 @@
   // ---------- 書誌情報の取得 ----------
   // openBD（版元ドットコムのデータ）を基本にして、足りない項目を国立国会図書館 → Google Books の順で補う
 
-  const DESCRIPTION_LIMIT = 1500;
-  const FIELDS = ["title", "author", "publisher", "pubdate", "price", "pages", "form", "genre", "series", "cover", "description"];
+  const FIELDS = ["title", "author", "publisher", "pubdate", "price", "pages", "form", "genre", "series", "cover"];
 
   // Cコード（書店の分類番号）の2桁目＝発行形態、3〜4桁目＝内容
   const CCODE_FORM = { 0: "単行本", 1: "文庫", 2: "新書", 3: "全集・双書", 4: "ムック", 5: "辞典・事典", 6: "図鑑", 7: "絵本", 9: "コミック" };
@@ -571,19 +570,6 @@
     const onix = entry.onix || {};
     const detail = onix.DescriptiveDetail || {};
 
-    let description = "";
-    const textContents = onix.CollateralDetail && onix.CollateralDetail.TextContent;
-    if (Array.isArray(textContents)) {
-      for (const type of ["03", "02", "04", "01"]) {
-        const match = textContents.find((t) => t.TextType === type && t.Text);
-        if (match) {
-          description = match.Text;
-          break;
-        }
-      }
-      if (!description && textContents[0] && textContents[0].Text) description = textContents[0].Text;
-    }
-
     let pages = "";
     if (Array.isArray(detail.Extent)) {
       const ext = detail.Extent.find((e) => e.ExtentType === "11") || detail.Extent[0];
@@ -622,7 +608,6 @@
       genre,
       series: summary.series || "",
       cover: summary.cover || "",
-      description: cleanText(description),
     };
   }
 
@@ -654,7 +639,6 @@
       genre: "",
       series: "",
       cover: img ? img.replace(/^http:/, "https:").replace(/&edge=curl/, "") : "",
-      description: cleanText(v.description || ""),
     };
   }
 
@@ -709,26 +693,10 @@
       // 例：「新潮文庫 ; つ-4-11」→「新潮文庫」
       series: pick(item, "seriesTitle").split(/\s*;\s*/)[0],
       cover: "",
-      description: "",
     };
   }
 
   // ---- 整形 ----
-  function cleanText(s) {
-    let t = String(s || "")
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<[^>]+>/g, "")
-      .replace(/&nbsp;/g, " ")
-      .replace(/&amp;/g, "&")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&quot;/g, '"')
-      .replace(/\r\n?/g, "\n")
-      .trim();
-    if (t.length > DESCRIPTION_LIMIT) t = t.slice(0, DESCRIPTION_LIMIT) + "…";
-    return t;
-  }
-
   // 「筒井,康隆,1934-」→「筒井康隆」、「Smith,John,1950-」→「John Smith」
   function cleanAuthor(raw) {
     const s = String(raw || "").replace(/\s+/g, " ").trim();
@@ -825,10 +793,6 @@
     lines.push(book.title);
     if (book.author) lines.push(book.author);
     lines.push("");
-    if (book.description) {
-      lines.push(book.description);
-      lines.push("");
-    }
     lines.push(HASHTAGS);
     return lines.join("\n");
   }
@@ -1272,8 +1236,7 @@
   function mergeInto(record, fresh) {
     let changed = 0;
     FIELDS.forEach((k) => {
-      // 内容紹介は目録には保存しない（投稿文作成でのみ使う）
-      if (k === "description" || !fresh[k]) return;
+      if (!fresh[k]) return;
       const isPlaceholder = k === "title" && /^\(書誌情報なし\)|^\(タイトル不明\)/.test(record.title || "");
       const isLibraryAuthor = k === "author" && /,\d{4}-/.test(record.author || "");
       if (!record[k] || isPlaceholder || isLibraryAuthor) {
@@ -1504,12 +1467,19 @@
 
   // ---------- 起動 ----------
 
-  // 以前の版で目録に保存していた内容紹介を取り除く
+  // 以前の版で保存していた内容紹介を取り除く（目録・スキャン履歴とも）
   (function dropStoredDescriptions() {
     const list = loadCatalog();
     if (list.some((b) => "description" in b)) {
       list.forEach((b) => delete b.description);
       saveCatalog(list);
+    }
+    const history = loadHistory();
+    if (history.some((b) => "description" in b)) {
+      history.forEach((b) => delete b.description);
+      try {
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+      } catch {}
     }
   })();
 
