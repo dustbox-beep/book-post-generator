@@ -854,6 +854,9 @@
   }
 
   function renderBook(book) {
+    // 目録で内容紹介を手入力していれば、投稿文にもそれを使う
+    const rec = findInCatalog(book.isbn);
+    if (rec && rec.description && !book.description) book = { ...book, description: rec.description };
     currentBook = book;
     bookInfoEl.innerHTML = "";
     bookInfoEl.appendChild(coverElement(book));
@@ -1136,12 +1139,13 @@
     const b = findInCatalog(isbn);
     if (!b) return;
     editingIsbn = isbn;
-    $("edit-title").value = b.title;
-    $("edit-author").value = b.author;
-    $("edit-publisher").value = b.publisher;
-    $("edit-location").value = b.location;
-    $("edit-status").value = b.status;
-    $("edit-memo").value = b.memo;
+    $("edit-title").value = b.title || "";
+    $("edit-author").value = b.author || "";
+    $("edit-publisher").value = b.publisher || "";
+    $("edit-location").value = b.location || "";
+    $("edit-status").value = STATUSES.includes(b.status) ? b.status : "未読";
+    $("edit-memo").value = b.memo || "";
+    $("edit-description").value = b.description || "";
     $("edit-meta").textContent =
       "ISBN " + b.isbn + "　登録日 " + new Date(b.addedAt).toLocaleDateString("ja-JP");
     renderEditDetails(b);
@@ -1175,17 +1179,8 @@
       });
       box.appendChild(dl);
     }
-    if (b.description) {
-      const det = document.createElement("details");
-      const sum = document.createElement("summary");
-      sum.textContent = "内容紹介";
-      const p = document.createElement("p");
-      p.textContent = b.description;
-      det.append(sum, p);
-      box.appendChild(det);
-    }
     box.appendChild(hanmotoLink(b.isbn));
-    if (!rows.length && !b.description) {
+    if (!rows.length) {
       const p = document.createElement("p");
       p.className = "edit-meta";
       p.textContent = "詳しい情報はまだありません。「情報を再取得」を押すと探し直します。";
@@ -1227,12 +1222,15 @@
     btn.disabled = true;
     btn.textContent = "取得中...";
     try {
+      const before = findInCatalog(editingIsbn) || {};
       const changed = await refreshRecord(editingIsbn);
       const b = findInCatalog(editingIsbn);
       if (b) {
-        $("edit-title").value = b.title;
-        $("edit-author").value = b.author;
-        $("edit-publisher").value = b.publisher;
+        // 新しく補われた項目だけを画面に反映（入力途中の内容は消さない）
+        [["title", "edit-title"], ["author", "edit-author"], ["publisher", "edit-publisher"], ["description", "edit-description"]].forEach(([k, id]) => {
+          if (b[k] !== before[k] && !$(id).value.trim()) $(id).value = b[k];
+          else if (b[k] !== before[k] && $(id).value === (before[k] || "")) $(id).value = b[k];
+        });
         renderEditDetails(b);
       }
       toast(changed ? changed + "項目を補いました" : "新しい情報は見つかりませんでした", changed ? "ok" : "");
@@ -1257,6 +1255,7 @@
       b.location = $("edit-location").value.trim();
       b.status = $("edit-status").value;
       b.memo = $("edit-memo").value.trim();
+      b.description = $("edit-description").value.trim();
       saveCatalog(list);
     }
     editDialog.close();
