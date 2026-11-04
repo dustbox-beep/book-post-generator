@@ -505,7 +505,7 @@
   };
 
   async function fetchBook(isbn) {
-    const tasks = [fetchOpenBD(isbn), fetchGoogleBooks(isbn)];
+    const tasks = [fetchOpenBD(isbn), fetchGoogleBooks(isbn), fetchNDL(isbn)];
     if (getRakutenSettings()) tasks.push(fetchRakuten(isbn));
     const results = await Promise.allSettled(tasks);
     const found = results.filter((r) => r.status === "fulfilled" && r.value).map((r) => r.value);
@@ -514,19 +514,50 @@
       if (results.every((r) => r.status === "rejected")) throw new Error("all sources failed");
       return null;
     }
-    // 優先順：openBD → 楽天 → Google
-    const order = { openbd: 0, rakuten: 1, google: 2 };
+    // 優先順：openBD → 楽天 → 国立国会図書館 → Google
+    const order = { openbd: 0, rakuten: 1, ndl: 2, google: 3 };
     found.sort((a, b) => order[a.source] - order[b.source]);
     const book = { isbn, sources: found.map((f) => f.source) };
     FIELDS.forEach((k) => {
       const hit = found.find((f) => f[k]);
       book[k] = hit ? hit[k] : "";
     });
-    // openBD の著者が図書館式（例：筒井,康隆,1934-）のときは楽天の表記を優先
-    const rk = found.find((f) => f.source === "rakuten");
-    if (rk && rk.author && /,/.test(found[0].author || "")) book.author = rk.author;
+    // 表紙：openBD・楽天に無ければ国立国会図書館の書影、それも無ければ Google
+    // （Google の画像は日本の本だと「画像なし」の絵のことが多いので最後にする）
+    const primaryCover = found.find((f) => (f.source === "openbd" || f.source === "rakuten") && f.cover);
+    if (primaryCover) {
+      book.cover = primaryCover.cover;
+    } else if (await imageExists(ndlThumbnailUrl(isbn))) {
+      book.cover = ndlThumbnailUrl(isbn);
+      if (!book.sources.includes("ndl")) book.sources.push("ndl");
+    } else {
+      const g = found.find((f) => f.source === "google" && f.cover);
+      book.cover = g ? g.cover : "";
+    }
+    // openBD の著者が図書館式（例：筒井,康隆,1934-）だった場合は、他の情報源の表記を優先
+    const rawOb = found.find((f) => f.source === "openbd");
+    if (rawOb && rawOb.rawAuthorLibraryStyle) {
+      const alt = found.find((f) => f.source !== "openbd" && f.author);
+      if (alt) book.author = alt.author;
+    }
     if (!book.title) book.title = "(タイトル不明)";
     return book;
+  }
+
+  // 画像が実際に読み込めるか確かめる（存在しない書影を表紙にしないため）
+  function imageExists(url, timeoutMs = 3000) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      const timer = setTimeout(() => done(false), timeoutMs);
+      function done(ok) {
+        clearTimeout(timer);
+        img.onload = img.onerror = null;
+        resolve(ok);
+      }
+      img.onload = () => done(img.naturalWidth > 1 && img.naturalHeight > 1);
+      img.onerror = () => done(false);
+      img.src = url;
+    });
   }
 
   // ---- openBD ----
@@ -585,6 +616,7 @@
       isbn,
       title,
       author: cleanAuthor(summary.author || ""),
+      rawAuthorLibraryStyle: /,/.test(summary.author || ""),
       publisher: summary.publisher || "",
       pubdate: normalizeDate(summary.pubdate || ""),
       price,
@@ -626,6 +658,61 @@
       series: "",
       cover: img ? img.replace(/^http:/, "https:").replace(/&edge=curl/, "") : "",
       description: cleanText(v.description || ""),
+    };
+  }
+
+  // ---- 国立国会図書館サーチ ----
+  const NDL_OPENSEARCH = "https://ndlsearch.ndl.go.jp/api/opensearch";
+  // NDC（日本十進分類法）の大まかな区分
+  const NDC_GENRE = { 0: "総記", 1: "哲学・宗教", 2: "歴史・地理", 3: "社会科学", 4: "自然科学", 5: "技術・工学", 6: "産業", 7: "芸術・スポーツ", 8: "言語", 9: "文学" };
+  const NDC_DETAIL = { 913: "日本文学（小説）", 914: "日本文学（評論・随筆）", 911: "日本文学（詩歌）", 933: "外国文学（小説）", 923: "外国文学（小説）", 953: "外国文学（小説）", 726: "コミックス・劇画" };
+
+  function ndlThumbnailUrl(isbn) {
+    return "https://ndlsearch.ndl.go.jp/thumbnail/" + isbn + ".jpg";
+  }
+
+  async function fetchNDL(isbn) {
+    const res = await fetch(NDL_OPENSEARCH + "?cnt=5&isbn=" + encodeURIComponent(isbn));
+    if (!res.ok) throw new Error("NDL HTTP " + res.status);
+    const xml = new DOMParser().parseFromString(await res.text(), "application/xml");
+    const items = [...xml.getElementsByTagName("item")];
+    if (!items.length) return null;
+    const pick = (el, name) => {
+      const n = [...el.getElementsByTagName("*")].find((x) => x.localName === name || x.nodeName === name);
+      return n ? n.textContent.trim() : "";
+    };
+    const pickAll = (el, name) =>
+      [...el.getElementsByTagName("*")].filter((x) => x.localName === name).map((x) => x.textContent.trim());
+    // ISBN が一致し、なるべく「図書」の項目を選ぶ
+    const item =
+      items.find((it) => pickAll(it, "identifier").some((v) => normalizeIsbn(v) === isbn)) || items[0];
+
+    const extent = pick(item, "extent"); // 例：「478p ; 16cm」
+    const pagesMatch = extent.match(/(\d+)\s*p/);
+    const ndc = pickAll(item, "subject").find((v) => /^\d{3}(\.\d+)?$/.test(v)) || "";
+    let genre = "";
+    if (ndc) genre = NDC_DETAIL[ndc.slice(0, 3)] || NDC_GENRE[ndc[0]] || "";
+    const creators = pickAll(item, "creator");
+    const author = (creators.length ? creators : [pick(item, "author")])
+      .map((a) => a.replace(/\s*(著|作)$/, "").trim())
+      .filter(Boolean)
+      .join("、");
+
+    return {
+      source: "ndl",
+      isbn,
+      title: pick(item, "title"),
+      author: cleanAuthor(author),
+      publisher: pick(item, "publisher"),
+      pubdate: normalizeDate(pick(item, "issued") || pick(item, "date")),
+      price: (pick(item, "price").match(/\d[\d,]*/) || [""])[0].replace(/,/g, ""),
+      pages: pagesMatch ? pagesMatch[1] : "",
+      form: "",
+      genre,
+      // 例：「新潮文庫 ; つ-4-11」→「新潮文庫」
+      series: pick(item, "seriesTitle").split(/\s*;\s*/)[0],
+      cover: "",
+      description: "",
     };
   }
 
@@ -750,9 +837,9 @@
   // 「20000101」「2000-01」「2000年01月上旬」などを「2000-01-01」「2000-01」形式にそろえる
   function normalizeDate(raw) {
     const s = String(raw || "").trim();
-    let m = s.match(/^(\d{4})(\d{2})(\d{2})$/) || s.match(/^(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})/);
+    let m = s.match(/^(\d{4})(\d{2})(\d{2})$/) || s.match(/^(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})/);
     if (m) return m[1] + "-" + m[2].padStart(2, "0") + "-" + m[3].padStart(2, "0");
-    m = s.match(/^(\d{4})(\d{2})$/) || s.match(/^(\d{4})[-/年](\d{1,2})/);
+    m = s.match(/^(\d{4})(\d{2})$/) || s.match(/^(\d{4})[-/.年](\d{1,2})/);
     if (m) return m[1] + "-" + m[2].padStart(2, "0");
     m = s.match(/^(\d{4})/);
     return m ? m[1] : "";
@@ -780,7 +867,21 @@
     ].filter((r) => r[1]);
   }
 
-  const SOURCE_NAMES = { openbd: "openBD", rakuten: "楽天ブックス", google: "Google Books" };
+  const SOURCE_NAMES = { openbd: "openBD", rakuten: "楽天ブックス", ndl: "国立国会図書館", google: "Google Books" };
+
+  function hanmotoUrl(isbn) {
+    return "https://www.hanmoto.com/bd/isbn/" + isbn;
+  }
+
+  function hanmotoLink(isbn) {
+    const a = document.createElement("a");
+    a.href = hanmotoUrl(isbn);
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.className = "ext-link";
+    a.textContent = "📖 版元ドットコムで見る";
+    return a;
+  }
 
   // ---------- 投稿文モード ----------
 
@@ -851,6 +952,9 @@
       detailRows(book).map((r) => "<dt>" + r[0] + "</dt><dd>" + escapeHtml(r[1]) + "</dd>").join("") +
       "<dt>ISBN</dt><dd>" + escapeHtml(book.isbn) + "</dd>" +
       sourceLine(book);
+    const ddLink = document.createElement("dd");
+    ddLink.appendChild(hanmotoLink(book.isbn));
+    dl.appendChild(ddLink);
     bookInfoEl.appendChild(dl);
 
     postTextEl.value = buildPostText(book);
@@ -1166,6 +1270,7 @@
       det.append(sum, p);
       box.appendChild(det);
     }
+    box.appendChild(hanmotoLink(b.isbn));
     if (!rows.length && !b.description) {
       const p = document.createElement("p");
       p.className = "edit-meta";
