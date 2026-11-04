@@ -481,11 +481,8 @@
   });
 
   // ---------- 書誌情報の取得 ----------
-  // openBD を基本にして、足りない項目を楽天ブックス（設定時のみ）→ Google Books の順で補う
+  // openBD（版元ドットコムのデータ）を基本にして、足りない項目を国立国会図書館 → Google Books の順で補う
 
-  const RAKUTEN_KEY = "rakuten-settings";
-  const RAKUTEN_ENDPOINT = "https://openapi.rakuten.co.jp/services/api/BooksBook/Search/20170404";
-  const RAKUTEN_MIN_INTERVAL_MS = 1100; // 楽天は1秒に1回まで
   const DESCRIPTION_LIMIT = 1500;
   const FIELDS = ["title", "author", "publisher", "pubdate", "price", "pages", "form", "genre", "series", "cover", "description"];
 
@@ -506,7 +503,6 @@
 
   async function fetchBook(isbn) {
     const tasks = [fetchOpenBD(isbn), fetchGoogleBooks(isbn), fetchNDL(isbn)];
-    if (getRakutenSettings()) tasks.push(fetchRakuten(isbn));
     const results = await Promise.allSettled(tasks);
     const found = results.filter((r) => r.status === "fulfilled" && r.value).map((r) => r.value);
     if (!found.length) {
@@ -514,17 +510,17 @@
       if (results.every((r) => r.status === "rejected")) throw new Error("all sources failed");
       return null;
     }
-    // 優先順：openBD → 楽天 → 国立国会図書館 → Google
-    const order = { openbd: 0, rakuten: 1, ndl: 2, google: 3 };
+    // 優先順：openBD → 国立国会図書館 → Google
+    const order = { openbd: 0, ndl: 1, google: 2 };
     found.sort((a, b) => order[a.source] - order[b.source]);
     const book = { isbn, sources: found.map((f) => f.source) };
     FIELDS.forEach((k) => {
       const hit = found.find((f) => f[k]);
       book[k] = hit ? hit[k] : "";
     });
-    // 表紙：openBD・楽天に無ければ国立国会図書館の書影、それも無ければ Google
+    // 表紙：openBD に無ければ国立国会図書館の書影、それも無ければ Google
     // （Google の画像は日本の本だと「画像なし」の絵のことが多いので最後にする）
-    const primaryCover = found.find((f) => (f.source === "openbd" || f.source === "rakuten") && f.cover);
+    const primaryCover = found.find((f) => f.source === "openbd" && f.cover);
     if (primaryCover) {
       book.cover = primaryCover.cover;
     } else if (await imageExists(ndlThumbnailUrl(isbn))) {
@@ -716,90 +712,6 @@
     };
   }
 
-  // ---- 楽天ブックス ----
-  function getRakutenSettings() {
-    try {
-      const s = JSON.parse(localStorage.getItem(RAKUTEN_KEY));
-      return s && s.applicationId && s.accessKey ? s : null;
-    } catch {
-      return null;
-    }
-  }
-
-  let rakutenLast = 0;
-  let rakutenQueue = Promise.resolve();
-  let rakutenErrorShown = false;
-
-  function queueRakuten(isbn, settingsOverride) {
-    // 1秒に1回の制限を守るため、順番待ちにする
-    const run = rakutenQueue.then(async () => {
-      const wait = rakutenLast + RAKUTEN_MIN_INTERVAL_MS - Date.now();
-      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-      rakutenLast = Date.now();
-      return requestRakuten(isbn, settingsOverride || getRakutenSettings());
-    });
-    rakutenQueue = run.catch(() => {});
-    return run;
-  }
-
-  async function requestRakuten(isbn, s) {
-    if (!s) return null;
-    const params = new URLSearchParams({
-      applicationId: s.applicationId,
-      accessKey: s.accessKey,
-      isbn,
-      format: "json",
-      formatVersion: "2",
-      outOfStockFlag: "1",
-    });
-    const res = await fetch(RAKUTEN_ENDPOINT + "?" + params.toString());
-    if (res.status === 404) return null;
-    if (!res.ok) {
-      let detail = "";
-      try {
-        const err = await res.json();
-        detail = err.error_description || err.error || "";
-      } catch {}
-      const e = new Error("Rakuten HTTP " + res.status + (detail ? " " + detail : ""));
-      e.rakutenStatus = res.status;
-      e.rakutenDetail = detail;
-      throw e;
-    }
-    const data = await res.json();
-    const list = (data && (data.Items || data.items)) || [];
-    const first = list[0] && (list[0].Item || list[0]);
-    if (!first) return null;
-    const img = first.largeImageUrl || first.mediumImageUrl || "";
-    return {
-      source: "rakuten",
-      isbn,
-      title: [first.title, first.subTitle].filter(Boolean).join(" "),
-      author: (first.author || "").replace(/\//g, "、"),
-      publisher: first.publisherName || "",
-      pubdate: normalizeDate(first.salesDate || ""),
-      price: first.itemPrice ? String(first.itemPrice) : "",
-      pages: "",
-      form: first.size || "",
-      genre: "",
-      series: first.seriesName || "",
-      // 楽天の画像は小さめに縮小されているので、大きめのサイズを指定
-      cover: img.replace(/\?_ex=\d+x\d+/, "?_ex=400x400"),
-      description: cleanText(first.itemCaption || ""),
-    };
-  }
-
-  // fetchBook 内の楽天エラーは他の情報源で補えるので、画面には一度だけ案内する
-  function fetchRakuten(isbn) {
-    return queueRakuten(isbn).catch((err) => {
-      console.error(err);
-      if (!rakutenErrorShown) {
-        rakutenErrorShown = true;
-        toast("楽天ブックスから取得できませんでした（設定を確認してください）", "warn");
-      }
-      throw err;
-    });
-  }
-
   // ---- 整形 ----
   function cleanText(s) {
     let t = String(s || "")
@@ -867,7 +779,7 @@
     ].filter((r) => r[1]);
   }
 
-  const SOURCE_NAMES = { openbd: "openBD", rakuten: "楽天ブックス", ndl: "国立国会図書館", google: "Google Books" };
+  const SOURCE_NAMES = { openbd: "openBD", ndl: "国立国会図書館", google: "Google Books" };
 
   function hanmotoUrl(isbn) {
     return "https://www.hanmoto.com/bd/isbn/" + isbn;
@@ -1455,74 +1367,6 @@
     }
   });
 
-  // ---------- 設定（楽天ブックス） ----------
-
-  $("this-origin").textContent = location.origin + "/";
-  const rakutenStatus = $("rakuten-status");
-
-  function loadRakutenForm() {
-    const st = getRakutenSettings();
-    $("rakuten-app-id").value = st ? st.applicationId : "";
-    $("rakuten-access-key").value = st ? st.accessKey : "";
-    rakutenStatus.textContent = st ? "楽天ブックス：設定済み" : "楽天ブックス：未設定";
-  }
-
-  function readRakutenForm() {
-    return {
-      applicationId: $("rakuten-app-id").value.trim(),
-      accessKey: $("rakuten-access-key").value.trim(),
-    };
-  }
-
-  $("rakuten-form").addEventListener("submit", (e) => {
-    e.preventDefault();
-    const st = readRakutenForm();
-    if (!st.applicationId || !st.accessKey) {
-      rakutenStatus.textContent = "アプリIDとアクセスキーの両方を入力してください";
-      return;
-    }
-    try {
-      localStorage.setItem(RAKUTEN_KEY, JSON.stringify(st));
-    } catch {}
-    rakutenErrorShown = false;
-    rakutenStatus.textContent = "保存しました。「接続テスト」で動作を確認できます";
-  });
-
-  $("rakuten-clear-btn").addEventListener("click", () => {
-    try {
-      localStorage.removeItem(RAKUTEN_KEY);
-    } catch {}
-    loadRakutenForm();
-  });
-
-  $("rakuten-test-btn").addEventListener("click", async () => {
-    const st = readRakutenForm();
-    if (!st.applicationId || !st.accessKey) {
-      rakutenStatus.textContent = "アプリIDとアクセスキーの両方を入力してください";
-      return;
-    }
-    rakutenStatus.textContent = "接続を確認しています...";
-    try {
-      // テスト用に、よく知られた本（新潮文庫『パプリカ』）で問い合わせる
-      const r = await queueRakuten("9784101171401", st);
-      rakutenStatus.textContent = r
-        ? "✅ 接続できました（テスト取得：" + r.title + "）"
-        : "接続はできましたが、テスト用の本が見つかりませんでした";
-    } catch (err) {
-      console.error(err);
-      if (err.rakutenStatus === 400 || err.rakutenStatus === 401 || err.rakutenStatus === 403) {
-        rakutenStatus.textContent =
-          "❌ 楽天に拒否されました（" + err.rakutenStatus + (err.rakutenDetail ? "：" + err.rakutenDetail : "") +
-          "）。IDとキー、「許可されたWebサイト」の登録を確認してください";
-      } else if (err.rakutenStatus === 429) {
-        rakutenStatus.textContent = "❌ 問い合わせが多すぎます。少し待ってから試してください";
-      } else {
-        rakutenStatus.textContent =
-          "❌ 接続できませんでした。通信状況、または「許可されたWebサイト」の登録を確認してください";
-      }
-    }
-  });
-
   // ---------- まとめて情報を補う ----------
 
   let bulkRunning = false;
@@ -1566,7 +1410,10 @@
 
   // ---------- 起動 ----------
 
-  loadRakutenForm();
+  // 以前の版で保存されていた楽天の設定が残っていれば消す
+  try {
+    localStorage.removeItem("rakuten-settings");
+  } catch {}
 
   updateBadge();
   let savedMode = "post";

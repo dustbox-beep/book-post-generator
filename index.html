@@ -97,25 +97,8 @@
 
     <section class="card" id="settings-section">
       <details>
-        <summary class="settings-summary">⚙️ 情報の取得元の設定</summary>
-        <p class="note">本の情報は <strong>openBD</strong>（版元ドットコムのデータ）、<strong>国立国会図書館</strong>、<strong>Google Books</strong> から自動で集めています（設定不要）。<br>
-        <strong>楽天ブックス</strong>も使うと、表紙画像・内容紹介・価格が見つかる本が増えます。使う場合は下に「アプリID」と「アクセスキー」を入力してください。</p>
-        <ol class="note steps">
-          <li><a href="https://webservice.rakuten.co.jp/" target="_blank" rel="noopener">楽天ウェブサービス</a>に楽天会員でログインし、「アプリ新規作成」を選ぶ</li>
-          <li>「許可されたWebサイト」に <code id="this-origin"></code> を登録する</li>
-          <li>発行された「アプリID」と「アクセスキー」を下に貼り付けて「保存」</li>
-        </ol>
-        <form id="rakuten-form" class="settings-form" autocomplete="off">
-          <label>アプリID<input type="text" id="rakuten-app-id" spellcheck="false" autocapitalize="off"></label>
-          <label>アクセスキー<input type="password" id="rakuten-access-key" spellcheck="false" autocapitalize="off"></label>
-          <div class="btn-row">
-            <button type="submit" class="btn btn-primary">保存</button>
-            <button type="button" id="rakuten-test-btn" class="btn btn-secondary">接続テスト</button>
-            <button type="button" id="rakuten-clear-btn" class="btn btn-secondary">削除</button>
-          </div>
-          <p id="rakuten-status" class="status-text"></p>
-          <p class="note">※ 入力したIDとキーは、この端末のブラウザ内にだけ保存されます（公開されているプログラムには含まれません）。</p>
-        </form>
+        <summary class="settings-summary">⚙️ 情報の取得元</summary>
+        <p class="note">本の情報は <strong>openBD</strong>（版元ドットコムのデータ）、<strong>国立国会図書館</strong>、<strong>Google Books</strong> から自動で集めています（設定不要）。</p>
         <hr class="divider">
         <h3 class="sub-h">登録済みの本の情報を補う</h3>
         <p class="note">目録の本について、空いている項目（表紙・内容紹介・価格など）をまとめて探し直します。手で直したタイトルなどは上書きしません。</p>

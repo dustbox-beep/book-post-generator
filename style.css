@@ -642,46 +642,6 @@ main {
   font-weight: 700;
 }
 
-.settings-form label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 10px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--color-secondary);
-}
-
-.settings-form input {
-  padding: 10px;
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-  font-size: 1rem;
-  font-family: inherit;
-  min-width: 0;
-}
-
-.btn-row {
-  display: flex;
-  gap: 8px;
-}
-
-.btn-row .btn {
-  padding: 12px 8px;
-  font-size: 0.9rem;
-}
-
-.steps {
-  padding-left: 1.4em;
-}
-
-.steps code {
-  word-break: break-all;
-  background: var(--color-bg);
-  padding: 1px 4px;
-  border-radius: 4px;
-}
-
 .divider {
   border: none;
   border-top: 1px solid var(--color-border);
