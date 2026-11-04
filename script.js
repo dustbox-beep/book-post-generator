@@ -855,9 +855,6 @@
   }
 
   function renderBook(book) {
-    // 目録で内容紹介を手入力していれば、投稿文にもそれを使う
-    const rec = findInCatalog(book.isbn);
-    if (rec && rec.description && !book.description) book = { ...book, description: rec.description };
     currentBook = book;
     bookInfoEl.innerHTML = "";
     bookInfoEl.appendChild(coverElement(book));
@@ -1020,7 +1017,6 @@
       genre: book.genre || "",
       series: book.series || "",
       cover: book.cover || "",
-      description: book.description || "",
       sources: Array.isArray(book.sources) ? book.sources : [],
       location: book.location || "",
       status: STATUSES.includes(book.status) ? book.status : "未読",
@@ -1223,7 +1219,6 @@
     $("edit-release-note").value = b.releaseNote || "";
     toggleReleaseFields();
     $("edit-memo").value = b.memo || "";
-    $("edit-description").value = b.description || "";
     $("edit-meta").textContent =
       "ISBN " + b.isbn + "　登録日 " + new Date(b.addedAt).toLocaleDateString("ja-JP");
     renderEditDetails(b);
@@ -1277,7 +1272,8 @@
   function mergeInto(record, fresh) {
     let changed = 0;
     FIELDS.forEach((k) => {
-      if (!fresh[k]) return;
+      // 内容紹介は目録には保存しない（投稿文作成でのみ使う）
+      if (k === "description" || !fresh[k]) return;
       const isPlaceholder = k === "title" && /^\(書誌情報なし\)|^\(タイトル不明\)/.test(record.title || "");
       const isLibraryAuthor = k === "author" && /,\d{4}-/.test(record.author || "");
       if (!record[k] || isPlaceholder || isLibraryAuthor) {
@@ -1312,7 +1308,7 @@
       const b = findInCatalog(editingIsbn);
       if (b) {
         // 新しく補われた項目だけを画面に反映（入力途中の内容は消さない）
-        [["title", "edit-title"], ["author", "edit-author"], ["publisher", "edit-publisher"], ["description", "edit-description"]].forEach(([k, id]) => {
+        [["title", "edit-title"], ["author", "edit-author"], ["publisher", "edit-publisher"]].forEach(([k, id]) => {
           if (b[k] !== before[k] && !$(id).value.trim()) $(id).value = b[k];
           else if (b[k] !== before[k] && $(id).value === (before[k] || "")) $(id).value = b[k];
         });
@@ -1340,7 +1336,6 @@
       b.location = $("edit-location").value.trim();
       b.status = $("edit-status").value;
       b.memo = $("edit-memo").value.trim();
-      b.description = $("edit-description").value.trim();
       const wasOwned = isOwned(b);
       b.owned = $("edit-owned").value !== "released";
       b.releasedAt = b.owned ? "" : $("edit-released-at").value || todayStr();
@@ -1400,7 +1395,7 @@
       backupStatus.textContent = "書き出す本がありません";
       return;
     }
-    const header = ["タイトル", "著者", "出版社", "発売日", "価格", "ページ数", "判型", "ジャンル", "シリーズ", "ISBN", "置き場所", "状態", "所持", "手放した日", "手放し方・売却先", "メモ", "登録日", "内容紹介"];
+    const header = ["タイトル", "著者", "出版社", "発売日", "価格", "ページ数", "判型", "ジャンル", "シリーズ", "ISBN", "置き場所", "状態", "所持", "手放した日", "手放し方・売却先", "メモ", "登録日"];
     const ISBN_COL = header.indexOf("ISBN");
     const rows = list.map((b) => [
       b.title,
@@ -1421,7 +1416,6 @@
       b.releaseNote || "",
       oneLine(b.memo),
       new Date(b.addedAt).toLocaleDateString("ja-JP"),
-      oneLine(b.description),
     ]);
     const csv = [header, ...rows]
       .map((r, i) => r.map((c, j) => (i > 0 && j === ISBN_COL ? c : csvCell(c))).join(","))
@@ -1509,6 +1503,15 @@
   });
 
   // ---------- 起動 ----------
+
+  // 以前の版で目録に保存していた内容紹介を取り除く
+  (function dropStoredDescriptions() {
+    const list = loadCatalog();
+    if (list.some((b) => "description" in b)) {
+      list.forEach((b) => delete b.description);
+      saveCatalog(list);
+    }
+  })();
 
   // 以前の版で保存されていた楽天の設定が残っていれば消す
   try {

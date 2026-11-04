@@ -105,7 +105,7 @@
         <p class="note">本の情報は <strong>openBD</strong>（版元ドットコムのデータ）、<strong>国立国会図書館</strong>、<strong>Google Books</strong> から自動で集めています（設定不要）。</p>
         <hr class="divider">
         <h3 class="sub-h">登録済みの本の情報を補う</h3>
-        <p class="note">目録の本について、空いている項目（表紙・内容紹介・価格など）をまとめて探し直します。手で直したタイトルなどは上書きしません。</p>
+        <p class="note">目録の本について、空いている項目（表紙・価格・ページ数など）をまとめて探し直します。手で直したタイトルなどは上書きしません。</p>
         <button type="button" id="bulk-refresh-btn" class="btn btn-secondary">🔄 まとめて情報を補う</button>
         <p id="bulk-status" class="status-text"></p>
       </details>
@@ -140,17 +140,6 @@
       <label>手放した日<input type="date" id="edit-released-at"></label>
       <label>手放し方・売却先など<input type="text" id="edit-release-note" placeholder="例: ブックオフで売却 120円"></label>
     </div>
-    <label>内容紹介（あらすじ）<textarea id="edit-description" rows="5" placeholder="自動で見つからなかったときは、裏表紙のあらすじを貼り付けられます"></textarea></label>
-    <details class="howto">
-      <summary>iPhoneで裏表紙の文字を写す方法</summary>
-      <ol>
-        <li>カメラアプリを開き、裏表紙のあらすじを写す</li>
-        <li>画面右下に出る「文字認識」ボタン（枠の中に3本線のマーク）を押す</li>
-        <li>文字を長押しして範囲を選び、「コピー」を押す</li>
-        <li>このアプリに戻り、上の欄を長押しして「ペースト」を押す</li>
-      </ol>
-      <p>撮影済みの写真でも、写真アプリで同じように文字を選んでコピーできます。</p>
-    </details>
     <label>メモ<textarea id="edit-memo" rows="3"></textarea></label>
     <div id="edit-details" class="edit-details"></div>
     <button type="button" id="edit-refresh-btn" class="btn btn-secondary btn-small">🔄 情報を再取得</button>

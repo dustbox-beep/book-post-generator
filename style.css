@@ -616,20 +616,6 @@ main {
   margin: 0;
 }
 
-.edit-details summary {
-  cursor: pointer;
-  color: var(--color-primary-dark);
-  font-weight: 600;
-}
-
-.edit-details details p {
-  white-space: pre-wrap;
-  line-height: 1.6;
-  margin: 6px 0 0;
-  max-height: 200px;
-  overflow-y: auto;
-}
-
 .btn-small {
   width: 100%;
   padding: 10px 12px;
@@ -664,28 +650,6 @@ main {
   font-weight: 600;
   font-size: 0.85rem;
   text-decoration: none;
-}
-
-.howto {
-  margin: -4px 0 12px;
-  font-size: 0.8rem;
-  color: var(--color-secondary);
-}
-
-.howto summary {
-  cursor: pointer;
-  color: var(--color-primary-dark);
-  font-weight: 600;
-}
-
-.howto ol {
-  margin: 6px 0 4px;
-  padding-left: 1.4em;
-  line-height: 1.6;
-}
-
-.howto p {
-  margin: 0;
 }
 
 .owned-tabs {
