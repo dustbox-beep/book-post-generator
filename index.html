@@ -90,13 +90,24 @@
       <h2>書き出し・バックアップ</h2>
       <p class="note">データはこの端末のブラウザ内に保存されています。ブラウザのデータ消去で消えるため、こまめにバックアップしてください。</p>
       <div class="btn-grid">
-        <button id="export-csv-btn" class="btn btn-primary">📄 CSVで書き出し<br><small>（Excelで開けます）</small></button>
+        <button id="export-xlsx-btn" class="btn btn-primary">📗 Excelで書き出し<br><small>（iCloud Driveに保存できます）</small></button>
+        <button id="export-csv-btn" class="btn btn-secondary">📄 CSVで書き出し</button>
         <button id="export-json-btn" class="btn btn-secondary">💾 バックアップ保存</button>
         <label class="btn btn-secondary file-btn">📂 バックアップ読込
           <input type="file" id="import-json-input" accept="application/json,.json" hidden>
         </label>
       </div>
       <p id="backup-status" class="status-text"></p>
+      <details class="howto-save">
+        <summary>iCloud Driveの同じファイルを更新する方法</summary>
+        <ol>
+          <li>「Excelで書き出し」を押す</li>
+          <li>共有画面で「"ファイル"に保存」を選ぶ</li>
+          <li>iCloud Driveで、前回と同じフォルダを選んで「保存」</li>
+          <li>「置き換えますか？」と聞かれたら「置き換える」を選ぶ</li>
+        </ol>
+        <p>ファイル名は毎回「蔵書目録.xlsx」なので、同じ場所に保存すれば常に最新の1ファイルになります。</p>
+      </details>
     </section>
 
     <section class="card" id="settings-section">
@@ -155,6 +166,7 @@
 <div id="toast" class="toast" hidden></div>
 
 <script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
+<script src="xlsx-writer.js"></script>
 <script src="script.js"></script>
 </body>
 </html>

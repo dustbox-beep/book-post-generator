@@ -709,6 +709,29 @@ main {
   background: var(--color-bg);
 }
 
+.howto-save {
+  margin-top: 6px;
+  font-size: 0.8rem;
+  color: var(--color-secondary);
+}
+
+.howto-save summary {
+  cursor: pointer;
+  color: var(--color-primary-dark);
+  font-weight: 600;
+}
+
+.howto-save ol {
+  margin: 6px 0 4px;
+  padding-left: 1.4em;
+  line-height: 1.6;
+}
+
+.howto-save p {
+  margin: 0;
+  line-height: 1.5;
+}
+
 @media (min-width: 600px) {
   .app {
     max-width: 560px;

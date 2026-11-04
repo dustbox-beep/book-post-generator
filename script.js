@@ -1352,40 +1352,86 @@
     return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   }
 
+  // CSV と Excel で共通の列（width は Excel の列幅、文字数の目安）
+  const EXPORT_COLUMNS = [
+    { header: "タイトル", width: 40, get: (b) => b.title },
+    { header: "著者", width: 18, get: (b) => b.author },
+    { header: "出版社", width: 14, get: (b) => b.publisher },
+    { header: "発売日", width: 14, get: (b) => formatDate(b.pubdate) },
+    { header: "価格", width: 8, type: "number", get: (b) => b.price || "" },
+    { header: "ページ数", width: 9, type: "number", get: (b) => b.pages || "" },
+    { header: "判型", width: 9, get: (b) => b.form || "" },
+    { header: "ジャンル", width: 18, get: (b) => b.genre || "" },
+    { header: "シリーズ", width: 16, get: (b) => b.series || "" },
+    { header: "ISBN", width: 16, get: (b) => b.isbn },
+    { header: "置き場所", width: 16, get: (b) => b.location || "" },
+    { header: "状態", width: 8, get: (b) => b.status },
+    { header: "所持", width: 11, get: (b) => (isOwned(b) ? "持っている" : "手放した") },
+    { header: "手放した日", width: 14, get: (b) => formatDate(b.releasedAt) },
+    { header: "手放し方・売却先", width: 22, get: (b) => b.releaseNote || "" },
+    { header: "メモ", width: 32, get: (b) => oneLine(b.memo) },
+    { header: "登録日", width: 12, get: (b) => new Date(b.addedAt).toLocaleDateString("ja-JP") },
+  ];
+
+  function exportRows(list) {
+    return list.map((b) => EXPORT_COLUMNS.map((c) => c.get(b)));
+  }
+
   $("export-csv-btn").addEventListener("click", () => {
     const list = loadCatalog();
     if (!list.length) {
       backupStatus.textContent = "書き出す本がありません";
       return;
     }
-    const header = ["タイトル", "著者", "出版社", "発売日", "価格", "ページ数", "判型", "ジャンル", "シリーズ", "ISBN", "置き場所", "状態", "所持", "手放した日", "手放し方・売却先", "メモ", "登録日"];
-    const ISBN_COL = header.indexOf("ISBN");
-    const rows = list.map((b) => [
-      b.title,
-      b.author,
-      b.publisher,
-      formatDate(b.pubdate),
-      b.price || "",
-      b.pages || "",
-      b.form || "",
-      b.genre || "",
-      b.series || "",
-      // Excelで数値扱い（指数表示）にならないよう文字列として出力
-      '="' + b.isbn + '"',
-      b.location,
-      b.status,
-      isOwned(b) ? "持っている" : "手放した",
-      formatDate(b.releasedAt),
-      b.releaseNote || "",
-      oneLine(b.memo),
-      new Date(b.addedAt).toLocaleDateString("ja-JP"),
-    ]);
-    const csv = [header, ...rows]
-      .map((r, i) => r.map((c, j) => (i > 0 && j === ISBN_COL ? c : csvCell(c))).join(","))
-      .join("\r\n");
+    const ISBN_COL = EXPORT_COLUMNS.findIndex((c) => c.header === "ISBN");
+    const lines = [EXPORT_COLUMNS.map((c) => csvCell(c.header)).join(",")].concat(
+      exportRows(list).map((r) =>
+        // ISBN は Excel で数値扱い（指数表示）にならないよう文字列として出力
+        r.map((c, j) => (j === ISBN_COL ? '="' + c + '"' : csvCell(c))).join(",")
+      )
+    );
     // 先頭のBOMでExcelが文字化けせずに開ける
-    download("蔵書目録_" + dateStamp() + ".csv", "﻿" + csv, "text/csv;charset=utf-8");
+    download("蔵書目録_" + dateStamp() + ".csv", "\uFEFF" + lines.join("\r\n"), "text/csv;charset=utf-8");
     backupStatus.textContent = list.length + "冊をCSVで書き出しました";
+  });
+
+  // iCloud Drive などに同じ名前で上書き保存できるよう、ファイル名は固定にする
+  const XLSX_FILENAME = "蔵書目録.xlsx";
+
+  $("export-xlsx-btn").addEventListener("click", async () => {
+    const list = loadCatalog();
+    if (!list.length) {
+      backupStatus.textContent = "書き出す本がありません";
+      return;
+    }
+    if (!window.XlsxWriter) {
+      backupStatus.textContent = "Excel書き出しの部品を読み込めませんでした。ページを再読み込みしてください";
+      return;
+    }
+    const blob = XlsxWriter.build({
+      sheetName: "蔵書目録",
+      columns: EXPORT_COLUMNS,
+      rows: exportRows(list),
+    });
+    const file = new File([blob], XLSX_FILENAME, { type: blob.type });
+    // iPhone では共有画面を開き、「"ファイル"に保存」から iCloud Drive に保存できる
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: "蔵書目録" });
+        backupStatus.textContent = list.length + "冊をExcelで書き出しました";
+      } catch (err) {
+        if (err && err.name === "AbortError") {
+          backupStatus.textContent = "書き出しをキャンセルしました";
+        } else {
+          console.error(err);
+          download(XLSX_FILENAME, blob, blob.type);
+          backupStatus.textContent = list.length + "冊をExcelで書き出しました";
+        }
+      }
+      return;
+    }
+    download(XLSX_FILENAME, blob, blob.type);
+    backupStatus.textContent = list.length + "冊をExcelで書き出しました";
   });
 
   $("export-json-btn").addEventListener("click", () => {
