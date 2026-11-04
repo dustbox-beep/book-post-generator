@@ -583,6 +583,120 @@ main {
 .toast-ok { background: #2e6b34; }
 .toast-warn { background: #a8590f; }
 
+/* ---------- 詳細・設定 ---------- */
+.book-info dd.src {
+  font-size: 0.75rem;
+  color: var(--color-secondary);
+}
+
+.c-tag {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #eee9dd;
+}
+
+.edit-details {
+  margin-bottom: 10px;
+  font-size: 0.85rem;
+}
+
+.edit-details dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0 0 8px;
+}
+
+.edit-details dt {
+  color: var(--color-secondary);
+  font-weight: 600;
+}
+
+.edit-details dd {
+  margin: 0;
+}
+
+.edit-details summary {
+  cursor: pointer;
+  color: var(--color-primary-dark);
+  font-weight: 600;
+}
+
+.edit-details details p {
+  white-space: pre-wrap;
+  line-height: 1.6;
+  margin: 6px 0 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.btn-small {
+  width: 100%;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  margin-bottom: 8px;
+}
+
+.settings-summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.settings-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-secondary);
+}
+
+.settings-form input {
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  font-size: 1rem;
+  font-family: inherit;
+  min-width: 0;
+}
+
+.btn-row {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-row .btn {
+  padding: 12px 8px;
+  font-size: 0.9rem;
+}
+
+.steps {
+  padding-left: 1.4em;
+}
+
+.steps code {
+  word-break: break-all;
+  background: var(--color-bg);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+
+.divider {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: 16px 0;
+}
+
+.sub-h {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+}
+
+#settings-section .note {
+  margin-top: 10px;
+}
+
 @media (min-width: 600px) {
   .app {
     max-width: 560px;

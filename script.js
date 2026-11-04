@@ -481,50 +481,306 @@
   });
 
   // ---------- 書誌情報の取得 ----------
+  // openBD を基本にして、足りない項目を楽天ブックス（設定時のみ）→ Google Books の順で補う
+
+  const RAKUTEN_KEY = "rakuten-settings";
+  const RAKUTEN_ENDPOINT = "https://openapi.rakuten.co.jp/services/api/BooksBook/Search/20170404";
+  const RAKUTEN_MIN_INTERVAL_MS = 1100; // 楽天は1秒に1回まで
+  const DESCRIPTION_LIMIT = 1500;
+  const FIELDS = ["title", "author", "publisher", "pubdate", "price", "pages", "form", "genre", "series", "cover", "description"];
+
+  // Cコード（書店の分類番号）の2桁目＝発行形態、3〜4桁目＝内容
+  const CCODE_FORM = { 0: "単行本", 1: "文庫", 2: "新書", 3: "全集・双書", 4: "ムック", 5: "辞典・事典", 6: "図鑑", 7: "絵本", 9: "コミック" };
+  const CCODE_GENRE = {
+    "00": "総記", "01": "百科事典", "02": "年鑑・雑誌", "04": "情報科学",
+    "10": "哲学", "11": "心理学", "12": "倫理学", "14": "宗教", "15": "仏教", "16": "キリスト教",
+    "20": "歴史総記", "21": "日本歴史", "22": "外国歴史", "23": "伝記", "25": "地理", "26": "旅行",
+    "30": "社会科学総記", "31": "政治", "32": "法律", "33": "経済・財政・統計", "34": "経営", "36": "社会", "37": "教育", "39": "民族・風習",
+    "40": "自然科学総記", "41": "数学", "42": "物理学", "43": "化学", "44": "天文・地学", "45": "生物学", "47": "医学・歯学・薬学",
+    "50": "工学総記", "51": "土木", "52": "建築", "53": "機械", "54": "電気", "55": "電子・通信", "56": "海事", "57": "採鉱・冶金", "58": "その他の工業",
+    "60": "産業総記", "61": "農林業", "62": "水産業", "63": "商業", "65": "交通・通信",
+    "70": "芸術総記", "71": "絵画・彫刻", "72": "写真・工芸", "73": "音楽・舞踊", "74": "演劇・映画", "75": "体育・スポーツ", "76": "諸芸・娯楽", "77": "家事", "79": "コミックス・劇画",
+    "80": "語学総記", "81": "日本語", "82": "英米語", "84": "ドイツ語", "85": "フランス語", "87": "各国語",
+    "90": "文学総記", "91": "日本文学総記", "92": "日本文学（詩歌）", "93": "日本文学（小説）", "95": "日本文学（評論・随筆）", "97": "外国文学（小説）", "98": "外国文学（その他）",
+  };
 
   async function fetchBook(isbn) {
-    const res = await fetch("https://api.openbd.jp/v1/get?isbn=" + encodeURIComponent(isbn));
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const data = await res.json();
-    const entry = data && data[0];
-    return entry ? extractBookInfo(entry, isbn) : null;
+    const tasks = [fetchOpenBD(isbn), fetchGoogleBooks(isbn)];
+    if (getRakutenSettings()) tasks.push(fetchRakuten(isbn));
+    const results = await Promise.allSettled(tasks);
+    const found = results.filter((r) => r.status === "fulfilled" && r.value).map((r) => r.value);
+    if (!found.length) {
+      // すべて通信エラーなら呼び出し元にエラーとして伝える
+      if (results.every((r) => r.status === "rejected")) throw new Error("all sources failed");
+      return null;
+    }
+    // 優先順：openBD → 楽天 → Google
+    const order = { openbd: 0, rakuten: 1, google: 2 };
+    found.sort((a, b) => order[a.source] - order[b.source]);
+    const book = { isbn, sources: found.map((f) => f.source) };
+    FIELDS.forEach((k) => {
+      const hit = found.find((f) => f[k]);
+      book[k] = hit ? hit[k] : "";
+    });
+    // openBD の著者が図書館式（例：筒井,康隆,1934-）のときは楽天の表記を優先
+    const rk = found.find((f) => f.source === "rakuten");
+    if (rk && rk.author && /,/.test(found[0].author || "")) book.author = rk.author;
+    if (!book.title) book.title = "(タイトル不明)";
+    return book;
   }
 
-  function extractBookInfo(entry, isbn) {
+  // ---- openBD ----
+  async function fetchOpenBD(isbn) {
+    const res = await fetch("https://api.openbd.jp/v1/get?isbn=" + encodeURIComponent(isbn));
+    if (!res.ok) throw new Error("openBD HTTP " + res.status);
+    const data = await res.json();
+    const entry = data && data[0];
+    return entry ? extractOpenBD(entry, isbn) : null;
+  }
+
+  function extractOpenBD(entry, isbn) {
     const summary = entry.summary || {};
+    const onix = entry.onix || {};
+    const detail = onix.DescriptiveDetail || {};
+
     let description = "";
-    const textContents =
-      entry.onix &&
-      entry.onix.CollateralDetail &&
-      entry.onix.CollateralDetail.TextContent;
+    const textContents = onix.CollateralDetail && onix.CollateralDetail.TextContent;
     if (Array.isArray(textContents)) {
-      const preferredOrder = ["03", "02", "04", "01"];
-      for (const type of preferredOrder) {
+      for (const type of ["03", "02", "04", "01"]) {
         const match = textContents.find((t) => t.TextType === type && t.Text);
         if (match) {
           description = match.Text;
           break;
         }
       }
-      if (!description && textContents[0] && textContents[0].Text) {
-        description = textContents[0].Text;
+      if (!description && textContents[0] && textContents[0].Text) description = textContents[0].Text;
+    }
+
+    let pages = "";
+    if (Array.isArray(detail.Extent)) {
+      const ext = detail.Extent.find((e) => e.ExtentType === "11") || detail.Extent[0];
+      if (ext && ext.ExtentValue) pages = String(Number(ext.ExtentValue) || "");
+    }
+
+    let price = "";
+    const supply = onix.ProductSupply && onix.ProductSupply.SupplyDetail;
+    if (supply && Array.isArray(supply.Price) && supply.Price[0] && supply.Price[0].PriceAmount) {
+      price = String(supply.Price[0].PriceAmount);
+    }
+
+    let form = "";
+    let genre = "";
+    if (Array.isArray(detail.Subject)) {
+      const c = detail.Subject.find((s) => s.SubjectSchemeIdentifier === "78");
+      const code = c && String(c.SubjectCode || "").replace(/^C/i, "");
+      if (code && /^\d{4}$/.test(code)) {
+        form = CCODE_FORM[code[1]] || "";
+        genre = CCODE_GENRE[code.slice(2)] || "";
       }
     }
-    description = description
-      .replace(/<[^>]+>/g, "")
-      .replace(/\r\n/g, "\n")
-      .trim();
 
+    const title = [summary.title, summary.volume].filter(Boolean).join(" ");
     return {
+      source: "openbd",
       isbn,
-      title: summary.title || "(タイトル不明)",
-      author: (summary.author || "").replace(/\s+/g, " ").trim(),
+      title,
+      author: cleanAuthor(summary.author || ""),
       publisher: summary.publisher || "",
-      pubdate: summary.pubdate || "",
+      pubdate: normalizeDate(summary.pubdate || ""),
+      price,
+      pages,
+      form,
+      genre,
+      series: summary.series || "",
       cover: summary.cover || "",
-      description,
+      description: cleanText(description),
     };
   }
+
+  // ---- Google Books ----
+  async function fetchGoogleBooks(isbn) {
+    const res = await fetch("https://www.googleapis.com/books/v1/volumes?q=isbn:" + encodeURIComponent(isbn));
+    if (!res.ok) throw new Error("Google HTTP " + res.status);
+    const data = await res.json();
+    const items = (data && data.items) || [];
+    // 念のため ISBN が一致するものだけを使う
+    const item = items.find((it) =>
+      ((it.volumeInfo && it.volumeInfo.industryIdentifiers) || []).some(
+        (id) => normalizeIsbn(id.identifier) === isbn
+      )
+    );
+    if (!item) return null;
+    const v = item.volumeInfo;
+    const img = v.imageLinks && (v.imageLinks.thumbnail || v.imageLinks.smallThumbnail);
+    return {
+      source: "google",
+      isbn,
+      title: [v.title, v.subtitle].filter(Boolean).join(" "),
+      author: (v.authors || []).join("、"),
+      publisher: v.publisher || "",
+      pubdate: normalizeDate(v.publishedDate || ""),
+      price: "",
+      pages: v.pageCount ? String(v.pageCount) : "",
+      form: "",
+      genre: "",
+      series: "",
+      cover: img ? img.replace(/^http:/, "https:").replace(/&edge=curl/, "") : "",
+      description: cleanText(v.description || ""),
+    };
+  }
+
+  // ---- 楽天ブックス ----
+  function getRakutenSettings() {
+    try {
+      const s = JSON.parse(localStorage.getItem(RAKUTEN_KEY));
+      return s && s.applicationId && s.accessKey ? s : null;
+    } catch {
+      return null;
+    }
+  }
+
+  let rakutenLast = 0;
+  let rakutenQueue = Promise.resolve();
+  let rakutenErrorShown = false;
+
+  function queueRakuten(isbn, settingsOverride) {
+    // 1秒に1回の制限を守るため、順番待ちにする
+    const run = rakutenQueue.then(async () => {
+      const wait = rakutenLast + RAKUTEN_MIN_INTERVAL_MS - Date.now();
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      rakutenLast = Date.now();
+      return requestRakuten(isbn, settingsOverride || getRakutenSettings());
+    });
+    rakutenQueue = run.catch(() => {});
+    return run;
+  }
+
+  async function requestRakuten(isbn, s) {
+    if (!s) return null;
+    const params = new URLSearchParams({
+      applicationId: s.applicationId,
+      accessKey: s.accessKey,
+      isbn,
+      format: "json",
+      formatVersion: "2",
+      outOfStockFlag: "1",
+    });
+    const res = await fetch(RAKUTEN_ENDPOINT + "?" + params.toString());
+    if (res.status === 404) return null;
+    if (!res.ok) {
+      let detail = "";
+      try {
+        const err = await res.json();
+        detail = err.error_description || err.error || "";
+      } catch {}
+      const e = new Error("Rakuten HTTP " + res.status + (detail ? " " + detail : ""));
+      e.rakutenStatus = res.status;
+      e.rakutenDetail = detail;
+      throw e;
+    }
+    const data = await res.json();
+    const list = (data && (data.Items || data.items)) || [];
+    const first = list[0] && (list[0].Item || list[0]);
+    if (!first) return null;
+    const img = first.largeImageUrl || first.mediumImageUrl || "";
+    return {
+      source: "rakuten",
+      isbn,
+      title: [first.title, first.subTitle].filter(Boolean).join(" "),
+      author: (first.author || "").replace(/\//g, "、"),
+      publisher: first.publisherName || "",
+      pubdate: normalizeDate(first.salesDate || ""),
+      price: first.itemPrice ? String(first.itemPrice) : "",
+      pages: "",
+      form: first.size || "",
+      genre: "",
+      series: first.seriesName || "",
+      // 楽天の画像は小さめに縮小されているので、大きめのサイズを指定
+      cover: img.replace(/\?_ex=\d+x\d+/, "?_ex=400x400"),
+      description: cleanText(first.itemCaption || ""),
+    };
+  }
+
+  // fetchBook 内の楽天エラーは他の情報源で補えるので、画面には一度だけ案内する
+  function fetchRakuten(isbn) {
+    return queueRakuten(isbn).catch((err) => {
+      console.error(err);
+      if (!rakutenErrorShown) {
+        rakutenErrorShown = true;
+        toast("楽天ブックスから取得できませんでした（設定を確認してください）", "warn");
+      }
+      throw err;
+    });
+  }
+
+  // ---- 整形 ----
+  function cleanText(s) {
+    let t = String(s || "")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<[^>]+>/g, "")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/\r\n?/g, "\n")
+      .trim();
+    if (t.length > DESCRIPTION_LIMIT) t = t.slice(0, DESCRIPTION_LIMIT) + "…";
+    return t;
+  }
+
+  // 「筒井,康隆,1934-」→「筒井康隆」、「Smith,John,1950-」→「John Smith」
+  function cleanAuthor(raw) {
+    const s = String(raw || "").replace(/\s+/g, " ").trim();
+    if (!s.includes(",")) return s;
+    return s
+      .split(" ")
+      .filter(Boolean)
+      .map((part) => {
+        if (!part.includes(",")) return part;
+        const segs = part.split(",").filter((x) => x && !/^\d{3,4}-?(\d{3,4})?$/.test(x));
+        if (!segs.length) return "";
+        if (segs.every((x) => /[^\x00-\x7F]/.test(x))) return segs.join("");
+        return segs.slice(1).concat(segs[0]).join(" ");
+      })
+      .filter(Boolean)
+      .join("、");
+  }
+
+  // 「20000101」「2000-01」「2000年01月上旬」などを「2000-01-01」「2000-01」形式にそろえる
+  function normalizeDate(raw) {
+    const s = String(raw || "").trim();
+    let m = s.match(/^(\d{4})(\d{2})(\d{2})$/) || s.match(/^(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})/);
+    if (m) return m[1] + "-" + m[2].padStart(2, "0") + "-" + m[3].padStart(2, "0");
+    m = s.match(/^(\d{4})(\d{2})$/) || s.match(/^(\d{4})[-/年](\d{1,2})/);
+    if (m) return m[1] + "-" + m[2].padStart(2, "0");
+    m = s.match(/^(\d{4})/);
+    return m ? m[1] : "";
+  }
+
+  function formatDate(d) {
+    if (!d) return "";
+    const p = d.split("-");
+    return p[0] + "年" + (p[1] ? Number(p[1]) + "月" : "") + (p[2] ? Number(p[2]) + "日" : "");
+  }
+
+  function formatPrice(p) {
+    return p ? Number(p).toLocaleString("ja-JP") + "円" : "";
+  }
+
+  // 書誌の詳細を「項目名, 値」の配列で返す（表示用）
+  function detailRows(b) {
+    return [
+      ["発売日", formatDate(b.pubdate)],
+      ["価格", formatPrice(b.price)],
+      ["ページ数", b.pages ? b.pages + "ページ" : ""],
+      ["判型", b.form],
+      ["ジャンル", b.genre],
+      ["シリーズ", b.series],
+    ].filter((r) => r[1]);
+  }
+
+  const SOURCE_NAMES = { openbd: "openBD", rakuten: "楽天ブックス", google: "Google Books" };
 
   // ---------- 投稿文モード ----------
 
@@ -592,7 +848,9 @@
       "<dt>タイトル</dt><dd>" + escapeHtml(book.title) + "</dd>" +
       "<dt>著者</dt><dd>" + escapeHtml(book.author || "-") + "</dd>" +
       "<dt>出版社</dt><dd>" + escapeHtml(book.publisher || "-") + "</dd>" +
-      "<dt>ISBN</dt><dd>" + escapeHtml(book.isbn) + "</dd>";
+      detailRows(book).map((r) => "<dt>" + r[0] + "</dt><dd>" + escapeHtml(r[1]) + "</dd>").join("") +
+      "<dt>ISBN</dt><dd>" + escapeHtml(book.isbn) + "</dd>" +
+      sourceLine(book);
     bookInfoEl.appendChild(dl);
 
     postTextEl.value = buildPostText(book);
@@ -600,6 +858,11 @@
     updateAddToCatalogBtn();
     resultSection.hidden = false;
     resultSection.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function sourceLine(book) {
+    const names = (book.sources || []).map((x) => SOURCE_NAMES[x]).filter(Boolean);
+    return names.length ? "<dt>情報元</dt><dd class=\"src\">" + escapeHtml(names.join("・")) + "</dd>" : "";
   }
 
   function updateAddToCatalogBtn() {
@@ -722,7 +985,14 @@
       author: book.author || "",
       publisher: book.publisher || "",
       pubdate: book.pubdate || "",
+      price: book.price || "",
+      pages: book.pages || "",
+      form: book.form || "",
+      genre: book.genre || "",
+      series: book.series || "",
       cover: book.cover || "",
+      description: book.description || "",
+      sources: Array.isArray(book.sources) ? book.sources : [],
       location: book.location || "",
       status: STATUSES.includes(book.status) ? book.status : "未読",
       memo: book.memo || "",
@@ -784,7 +1054,7 @@
     const filtered = list.filter((b) => {
       if (status && b.status !== status) return false;
       if (!q) return true;
-      return [b.title, b.author, b.publisher, b.location, b.memo, b.isbn]
+      return [b.title, b.author, b.publisher, b.series, b.genre, b.form, b.location, b.memo, b.isbn]
         .join(" ")
         .toLowerCase()
         .includes(q);
@@ -819,6 +1089,12 @@
       st.className = "c-status c-status-" + STATUSES.indexOf(b.status);
       st.textContent = b.status;
       meta.appendChild(st);
+      [b.form, b.genre].filter(Boolean).forEach((t) => {
+        const tag = document.createElement("span");
+        tag.className = "c-tag";
+        tag.textContent = t;
+        meta.appendChild(tag);
+      });
       if (b.location) {
         const loc = document.createElement("span");
         loc.textContent = "📍" + b.location;
@@ -850,6 +1126,7 @@
     $("edit-memo").value = b.memo;
     $("edit-meta").textContent =
       "ISBN " + b.isbn + "　登録日 " + new Date(b.addedAt).toLocaleDateString("ja-JP");
+    renderEditDetails(b);
 
     const locations = [...new Set(loadCatalog().map((x) => x.location).filter(Boolean))];
     const dl = $("location-options");
@@ -862,6 +1139,93 @@
 
     editDialog.showModal();
   }
+
+  function renderEditDetails(b) {
+    const box = $("edit-details");
+    box.innerHTML = "";
+    const rows = detailRows(b);
+    const names = (b.sources || []).map((x) => SOURCE_NAMES[x]).filter(Boolean);
+    if (names.length) rows.push(["情報元", names.join("・")]);
+    if (rows.length) {
+      const dl = document.createElement("dl");
+      rows.forEach(([k, v]) => {
+        const dt = document.createElement("dt");
+        dt.textContent = k;
+        const dd = document.createElement("dd");
+        dd.textContent = v;
+        dl.append(dt, dd);
+      });
+      box.appendChild(dl);
+    }
+    if (b.description) {
+      const det = document.createElement("details");
+      const sum = document.createElement("summary");
+      sum.textContent = "内容紹介";
+      const p = document.createElement("p");
+      p.textContent = b.description;
+      det.append(sum, p);
+      box.appendChild(det);
+    }
+    if (!rows.length && !b.description) {
+      const p = document.createElement("p");
+      p.className = "edit-meta";
+      p.textContent = "詳しい情報はまだありません。「情報を再取得」を押すと探し直します。";
+      box.appendChild(p);
+    }
+  }
+
+  // 空いている項目だけを新しく取得した情報で埋める（手で直したタイトルなどは上書きしない）
+  function mergeInto(record, fresh) {
+    let changed = 0;
+    FIELDS.forEach((k) => {
+      if (!fresh[k]) return;
+      const isPlaceholder = k === "title" && /^\(書誌情報なし\)|^\(タイトル不明\)/.test(record.title || "");
+      const isLibraryAuthor = k === "author" && /,\d{4}-/.test(record.author || "");
+      if (!record[k] || isPlaceholder || isLibraryAuthor) {
+        if (record[k] !== fresh[k]) {
+          record[k] = fresh[k];
+          changed++;
+        }
+      }
+    });
+    record.sources = [...new Set([...(record.sources || []), ...(fresh.sources || [])])];
+    return changed;
+  }
+
+  async function refreshRecord(isbn) {
+    const fresh = await fetchBook(isbn);
+    if (!fresh) return 0;
+    const list = loadCatalog();
+    const rec = list.find((x) => x.isbn === isbn);
+    if (!rec) return 0;
+    const changed = mergeInto(rec, fresh);
+    saveCatalog(list);
+    return changed;
+  }
+
+  $("edit-refresh-btn").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.textContent = "取得中...";
+    try {
+      const changed = await refreshRecord(editingIsbn);
+      const b = findInCatalog(editingIsbn);
+      if (b) {
+        $("edit-title").value = b.title;
+        $("edit-author").value = b.author;
+        $("edit-publisher").value = b.publisher;
+        renderEditDetails(b);
+      }
+      toast(changed ? changed + "項目を補いました" : "新しい情報は見つかりませんでした", changed ? "ok" : "");
+      renderCatalog();
+    } catch (err) {
+      console.error(err);
+      toast("取得に失敗しました。通信状況を確認してください", "warn");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "🔄 情報を再取得";
+    }
+  });
 
   editForm.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -922,21 +1286,28 @@
       backupStatus.textContent = "書き出す本がありません";
       return;
     }
-    const header = ["タイトル", "著者", "出版社", "出版日", "ISBN", "置き場所", "状態", "メモ", "登録日"];
+    const header = ["タイトル", "著者", "出版社", "発売日", "価格", "ページ数", "判型", "ジャンル", "シリーズ", "ISBN", "置き場所", "状態", "メモ", "登録日", "内容紹介"];
+    const ISBN_COL = header.indexOf("ISBN");
     const rows = list.map((b) => [
       b.title,
       b.author,
       b.publisher,
-      b.pubdate,
+      formatDate(b.pubdate),
+      b.price || "",
+      b.pages || "",
+      b.form || "",
+      b.genre || "",
+      b.series || "",
       // Excelで数値扱い（指数表示）にならないよう文字列として出力
       '="' + b.isbn + '"',
       b.location,
       b.status,
       b.memo,
       new Date(b.addedAt).toLocaleDateString("ja-JP"),
+      b.description || "",
     ]);
     const csv = [header, ...rows]
-      .map((r, i) => r.map((c, j) => (i > 0 && j === 4 ? c : csvCell(c))).join(","))
+      .map((r, i) => r.map((c, j) => (i > 0 && j === ISBN_COL ? c : csvCell(c))).join(","))
       .join("\r\n");
     // 先頭のBOMでExcelが文字化けせずに開ける
     download("蔵書目録_" + dateStamp() + ".csv", "﻿" + csv, "text/csv;charset=utf-8");
@@ -979,7 +1350,118 @@
     }
   });
 
+  // ---------- 設定（楽天ブックス） ----------
+
+  $("this-origin").textContent = location.origin + "/";
+  const rakutenStatus = $("rakuten-status");
+
+  function loadRakutenForm() {
+    const st = getRakutenSettings();
+    $("rakuten-app-id").value = st ? st.applicationId : "";
+    $("rakuten-access-key").value = st ? st.accessKey : "";
+    rakutenStatus.textContent = st ? "楽天ブックス：設定済み" : "楽天ブックス：未設定";
+  }
+
+  function readRakutenForm() {
+    return {
+      applicationId: $("rakuten-app-id").value.trim(),
+      accessKey: $("rakuten-access-key").value.trim(),
+    };
+  }
+
+  $("rakuten-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const st = readRakutenForm();
+    if (!st.applicationId || !st.accessKey) {
+      rakutenStatus.textContent = "アプリIDとアクセスキーの両方を入力してください";
+      return;
+    }
+    try {
+      localStorage.setItem(RAKUTEN_KEY, JSON.stringify(st));
+    } catch {}
+    rakutenErrorShown = false;
+    rakutenStatus.textContent = "保存しました。「接続テスト」で動作を確認できます";
+  });
+
+  $("rakuten-clear-btn").addEventListener("click", () => {
+    try {
+      localStorage.removeItem(RAKUTEN_KEY);
+    } catch {}
+    loadRakutenForm();
+  });
+
+  $("rakuten-test-btn").addEventListener("click", async () => {
+    const st = readRakutenForm();
+    if (!st.applicationId || !st.accessKey) {
+      rakutenStatus.textContent = "アプリIDとアクセスキーの両方を入力してください";
+      return;
+    }
+    rakutenStatus.textContent = "接続を確認しています...";
+    try {
+      // テスト用に、よく知られた本（新潮文庫『パプリカ』）で問い合わせる
+      const r = await queueRakuten("9784101171401", st);
+      rakutenStatus.textContent = r
+        ? "✅ 接続できました（テスト取得：" + r.title + "）"
+        : "接続はできましたが、テスト用の本が見つかりませんでした";
+    } catch (err) {
+      console.error(err);
+      if (err.rakutenStatus === 400 || err.rakutenStatus === 401 || err.rakutenStatus === 403) {
+        rakutenStatus.textContent =
+          "❌ 楽天に拒否されました（" + err.rakutenStatus + (err.rakutenDetail ? "：" + err.rakutenDetail : "") +
+          "）。IDとキー、「許可されたWebサイト」の登録を確認してください";
+      } else if (err.rakutenStatus === 429) {
+        rakutenStatus.textContent = "❌ 問い合わせが多すぎます。少し待ってから試してください";
+      } else {
+        rakutenStatus.textContent =
+          "❌ 接続できませんでした。通信状況、または「許可されたWebサイト」の登録を確認してください";
+      }
+    }
+  });
+
+  // ---------- まとめて情報を補う ----------
+
+  let bulkRunning = false;
+  $("bulk-refresh-btn").addEventListener("click", async (e) => {
+    if (bulkRunning) {
+      bulkRunning = false;
+      return;
+    }
+    const isbns = loadCatalog().map((b) => b.isbn);
+    const bulkStatus = $("bulk-status");
+    if (!isbns.length) {
+      bulkStatus.textContent = "目録に本がありません";
+      return;
+    }
+    const btn = e.currentTarget;
+    bulkRunning = true;
+    btn.textContent = "⏹ 中止する";
+    let done = 0;
+    let improved = 0;
+    let failed = 0;
+    for (const isbn of isbns) {
+      if (!bulkRunning) break;
+      bulkStatus.textContent = "情報を探しています… " + done + " / " + isbns.length + "冊";
+      try {
+        if ((await refreshRecord(isbn)) > 0) improved++;
+      } catch (err) {
+        console.error(err);
+        failed++;
+      }
+      done++;
+      // 各サービスに負担をかけないよう間隔をあける
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    bulkStatus.textContent =
+      (bulkRunning ? "完了：" : "中止しました：") + done + "冊を確認、" + improved + "冊の情報を補いました" +
+      (failed ? "（" + failed + "冊は通信エラー）" : "");
+    bulkRunning = false;
+    btn.textContent = "🔄 まとめて情報を補う";
+    if (mode === "catalog") renderCatalog();
+  });
+
   // ---------- 起動 ----------
+
+  loadRakutenForm();
 
   updateBadge();
   let savedMode = "post";
