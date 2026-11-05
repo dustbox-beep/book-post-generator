@@ -473,19 +473,26 @@
       if (g) fieldSources.cover = "google";
       else delete fieldSources.cover;
     }
-    // openBD の著者が図書館式（例：筒井,康隆,1934-）だった場合は、他の情報源の表記を優先
-    const rawOb = found.find((f) => f.source === "openbd");
-    if (rawOb && rawOb.rawAuthorLibraryStyle) {
-      const alt = found.find((f) => f.source !== "openbd" && f.author);
-      if (alt) {
-        book.author = alt.author;
-        fieldSources.author = alt.source;
-      }
+    // 著者：日本語（かな・漢字）の表記を最優先する。
+    // 同じ条件なら、openBD の図書館式（例：筒井,康隆,1934-）より他の情報源の表記を優先
+    const authorScore = (f) => (hasJapanese(f.author) ? 2 : 0) + (f.rawAuthorLibraryStyle ? 0 : 1);
+    let bestAuthor = null;
+    found.forEach((f) => {
+      if (f.author && (!bestAuthor || authorScore(f) > authorScore(bestAuthor))) bestAuthor = f;
+    });
+    if (bestAuthor) {
+      book.author = bestAuthor.author;
+      fieldSources.author = bestAuthor.source;
     }
     if (!book.title) book.title = "(タイトル不明)";
     book.fieldSources = fieldSources;
     book.sources = sourcesUsed(fieldSources);
     return book;
+  }
+
+  // かな・漢字を含むか（日本語の表記かどうか）
+  function hasJapanese(text) {
+    return /[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff]/.test(text || "");
   }
 
   // 実際に使った情報源を、優先順に並べて返す
@@ -1034,7 +1041,9 @@
       if (!fresh[k]) return;
       const isPlaceholder = k === "title" && /^\(書誌情報なし\)|^\(タイトル不明\)/.test(record.title || "");
       const isLibraryAuthor = k === "author" && /,\d{4}-/.test(record.author || "");
-      if (!record[k] || isPlaceholder || isLibraryAuthor) {
+      // 英語だけの著者名は、日本語の表記が見つかれば置き換える
+      const isNonJapaneseAuthor = k === "author" && !hasJapanese(record.author) && hasJapanese(fresh.author);
+      if (!record[k] || isPlaceholder || isLibraryAuthor || isNonJapaneseAuthor) {
         if (record[k] !== fresh[k]) {
           record[k] = fresh[k];
           changed++;
