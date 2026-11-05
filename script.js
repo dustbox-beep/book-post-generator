@@ -679,7 +679,12 @@
     if (ndc) genre = NDC_DETAIL[ndc.slice(0, 3)] || NDC_GENRE[ndc[0]] || "";
     const creators = pickAll(item, "creator");
     const author = (creators.length ? creators : [pick(item, "author")])
-      .map((a) => a.replace(/\s*(著|作)$/, "").trim())
+      .map((a) =>
+        a
+          .replace(/\s*(著|作|著者)$/, "")
+          .replace(/\s+(訳|編|編著|監修|絵|画|写真|監訳|共訳)$/, "（$1）")
+          .trim()
+      )
       .filter(Boolean)
       .join("、");
 
@@ -701,27 +706,78 @@
   }
 
   // ---- 整形 ----
-  // 「筒井,康隆,1934-」→「筒井康隆」、「Smith,John,1950-」→「John Smith」
-  function cleanAuthor(raw) {
-    // 「今村, 翔吾, 1984-」のようにカンマの後に空白がある書き方もそろえる
-    const s = String(raw || "")
-      .replace(/\s+/g, " ")
-      .replace(/\s*[,，]\s*/g, ",")
-      .trim();
-    if (!s.includes(",")) return s;
-    return s
-      .split(" ")
-      .filter(Boolean)
-      .map((part) => {
-        if (!part.includes(",")) return part;
-        const segs = part.split(",").filter((x) => x && !/^\d{3,4}-?(\d{3,4})?$/.test(x));
-        if (!segs.length) return "";
-        if (segs.every((x) => /[^\x00-\x7F]/.test(x))) return segs.join("");
-        return segs.slice(1).concat(segs[0]).join(" ");
-      })
-      .filter(Boolean)
-      .join("、");
+  // ---- 著者名の整形 ----
+  // 例）「筒井,康隆,1934-」→「筒井康隆」 「今村, 翔吾, 1984-」→「今村翔吾」
+  //     「オースター, ポール, 1947-」→「ポール・オースター」 「Auster,Paul」→「Paul Auster」
+  //     「東野圭吾／著」→「東野圭吾」 「松岡佑子／訳」→「松岡佑子（訳）」
+  //     「今村、翔吾、1984-」（以前の版で崩れた形）→「今村翔吾」
+  const YEAR_RE = /^\d{3,4}(\.\d{1,2})?-?(\d{3,4}(\.\d{1,2})?)?$/;
+  const DROP_ROLES = /^(著|作|著者|文|作・文|作者)$/;
+
+  function isYear(x) {
+    return YEAR_RE.test(x);
   }
+
+  // 「姓,名」の並びを読みやすい形にする
+  function joinNameParts(segs) {
+    if (!segs.length) return "";
+    if (segs.length === 1) return segs[0];
+    if (segs.every((x) => /^[\u30A0-\u30FF・ー＝=]+$/.test(x))) return segs.slice(1).concat(segs[0]).join("・"); // カタカナの外国人名
+    if (segs.every((x) => /[^\x00-\x7F]/.test(x))) return segs.join(""); // 日本人名
+    return segs.slice(1).concat(segs[0]).join(" "); // ローマ字
+  }
+
+  function cleanPerson(p) {
+    let name = p.trim();
+    let role = "";
+    const m = name.match(/^(.*?)\s*／\s*(.+)$/);
+    if (m) {
+      name = m[1];
+      role = m[2].trim();
+    }
+    if (name.includes(",")) name = joinNameParts(name.split(",").map((x) => x.trim()).filter((x) => x && !isYear(x)));
+    if (!name) return "";
+    return role && !DROP_ROLES.test(role) ? name + "（" + role + "）" : name;
+  }
+
+  // 以前の版で「、」区切りに崩れてしまった図書館式を、人ごとのまとまりに戻す
+  function repairBrokenLibraryStyle(s) {
+    const tokens = s.split("、");
+    if (!tokens.some(isYear)) return s;
+    const people = [];
+    let cur = [];
+    tokens.forEach((t) => {
+      if (isYear(t.trim())) {
+        if (cur.length) people.push(joinNameParts(cur));
+        cur = [];
+      } else {
+        cur.push(t.trim());
+      }
+    });
+    if (cur.length) people.push(...cur);
+    return people.filter(Boolean).join("、");
+  }
+
+  function cleanAuthor(raw) {
+    let s = String(raw || "")
+      .replace(/[\s\u3000]+/g, " ")
+      .replace(/\s*[,，]\s*/g, ",")
+      .replace(/\s*[/／]\s*/g, "／")
+      .trim();
+    if (!s) return "";
+    s = repairBrokenLibraryStyle(s);
+    if (!s.includes(",") && !s.includes("／")) return s;
+    let people;
+    if (s.includes("／")) {
+      // 「名前／役割 名前／役割」：役割の後の空白で人を区切る
+      people = s.replace(/(／[^\s／]+)\s+/g, "$1\u0001").split("\u0001");
+    } else {
+      // 図書館式は空白で人を区切る（「山田,太郎 鈴木,花子」）
+      people = s.split(" ");
+    }
+    return people.map(cleanPerson).filter(Boolean).join("、");
+  }
+
 
   // 「20000101」「2000-01」「2000年01月上旬」などを「2000-01-01」「2000-01」形式にそろえる
   function normalizeDate(raw) {
@@ -1463,6 +1519,39 @@
     }
   });
 
+  // ---------- 著者名の点検 ----------
+
+  function renderAuthorCheck() {
+    const box = $("author-check");
+    const list = loadCatalog().filter((b) => b.author && !hasJapanese(b.author));
+    if (!list.length) {
+      box.innerHTML = "";
+      const p = document.createElement("p");
+      p.className = "note";
+      p.textContent = "✅ 英語（ローマ字）だけの著者名はありません。";
+      box.appendChild(p);
+      return;
+    }
+    box.innerHTML = "";
+    const p = document.createElement("p");
+    p.className = "note";
+    p.textContent =
+      "英語（ローマ字）だけの著者名が" + list.length + "冊あります。「まとめて情報を補う」で日本語の表記が見つかれば置き換わります。見つからない本は、押して編集画面で直してください。";
+    const ul = document.createElement("ul");
+    ul.className = "author-check-list";
+    list.forEach((b) => {
+      const li = document.createElement("li");
+      li.textContent = b.title + " ／ " + b.author;
+      li.addEventListener("click", () => openEditor(b.isbn));
+      ul.appendChild(li);
+    });
+    box.append(p, ul);
+  }
+
+  document.querySelector("#settings-section details").addEventListener("toggle", (e) => {
+    if (e.target.open) renderAuthorCheck();
+  });
+
   // ---------- まとめて情報を補う ----------
 
   let bulkRunning = false;
@@ -1502,9 +1591,27 @@
     bulkRunning = false;
     btn.textContent = "🔄 まとめて情報を補う";
     renderCatalog();
+    renderAuthorCheck();
   });
 
   // ---------- 起動 ----------
+
+  // 著者名の表記を点検して、図書館式や崩れた書き方を直す（何度実行しても同じ結果）
+  (function fixAuthorNames() {
+    const list = loadCatalog();
+    let fixed = 0;
+    list.forEach((b) => {
+      const cleaned = cleanAuthor(b.author || "");
+      if (cleaned !== (b.author || "")) {
+        b.author = cleaned;
+        fixed++;
+      }
+    });
+    if (fixed) {
+      saveCatalog(list);
+      setTimeout(() => toast("著者名の表記を" + fixed + "冊分そろえました", "ok"), 600);
+    }
+  })();
 
   // 以前の版で目録に保存していた内容紹介を取り除く
   (function dropStoredDescriptions() {
