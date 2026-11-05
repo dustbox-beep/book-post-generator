@@ -1,6 +1,9 @@
 (() => {
   "use strict";
 
+  // 更新のたびに変える。index.html の「?v=」と同じ値にする（画面下に表示して、最新版か確かめられるようにする）
+  const APP_VERSION = "20261106a";
+
   const CATALOG_KEY = "book-catalog";
   const SAME_ISBN_COOLDOWN_MS = 4000;
   const STATUSES = ["未読", "読書中", "読了"];
@@ -1610,6 +1613,7 @@
     localStorage.removeItem("rakuten-settings");
   } catch {}
 
+  $("app-version").textContent = APP_VERSION;
   renderOwnerPicker();
   renderCatalog();
   renderBackupReminder();

@@ -730,6 +730,13 @@ main {
   border-bottom: none;
 }
 
+.app-version {
+  margin: 4px 0 0;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--color-secondary);
+}
+
 @media (min-width: 600px) {
   .app {
     max-width: 560px;

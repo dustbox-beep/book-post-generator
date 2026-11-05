@@ -2,9 +2,10 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>蔵書スキャン - 蔵書目録</title>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=20261106a">
 </head>
 <body>
 <div class="app">
@@ -122,6 +123,7 @@
         <p id="bulk-status" class="status-text"></p>
       </details>
     </section>
+    <p class="app-version">バージョン <span id="app-version"></span></p>
   </main>
 </div>
 
@@ -172,7 +174,7 @@
 <div id="toast" class="toast" hidden></div>
 
 <script src="vendor/zxing-library-0.21.3.min.js"></script>
-<script src="xlsx-writer.js"></script>
-<script src="script.js"></script>
+<script src="xlsx-writer.js?v=20261106a"></script>
+<script src="script.js?v=20261106a"></script>
 </body>
 </html>
