@@ -2,7 +2,7 @@
   "use strict";
 
   // 更新のたびに変える。index.html の「?v=」と同じ値にする（画面下に表示して、最新版か確かめられるようにする）
-  const APP_VERSION = "20261106a";
+  const APP_VERSION = "20261106b";
 
   const CATALOG_KEY = "book-catalog";
   const SAME_ISBN_COOLDOWN_MS = 4000;
@@ -547,17 +547,26 @@
   }
 
   // 画像が実際に読み込めるか確かめる（存在しない書影を表紙にしないため）
-  function imageExists(url, timeoutMs = 3000) {
+  // 電波が弱いときに「表紙なし」と判断しないよう、時間切れのときは待ち時間を延ばしてもう一度試す。
+  // 「画像が無い」とはっきり返ってきたとき（404など）は、すぐに諦める
+  async function imageExists(url) {
+    const first = await tryLoadImage(url, 8000);
+    if (first !== "timeout") return first === "ok";
+    return (await tryLoadImage(url + (url.includes("?") ? "&" : "?") + "retry=1", 15000)) === "ok";
+  }
+
+  function tryLoadImage(url, timeoutMs) {
     return new Promise((resolve) => {
       const img = new Image();
-      const timer = setTimeout(() => done(false), timeoutMs);
-      function done(ok) {
+      const timer = setTimeout(() => done("timeout"), timeoutMs);
+      function done(result) {
         clearTimeout(timer);
         img.onload = img.onerror = null;
-        resolve(ok);
+        img.src = "";
+        resolve(result);
       }
-      img.onload = () => done(img.naturalWidth > 1 && img.naturalHeight > 1);
-      img.onerror = () => done(false);
+      img.onload = () => done(img.naturalWidth > 1 && img.naturalHeight > 1 ? "ok" : "none");
+      img.onerror = () => done("none");
       img.src = url;
     });
   }
@@ -1506,7 +1515,7 @@
     const p = document.createElement("p");
     p.className = "note";
     p.textContent =
-      "英語（ローマ字）だけの著者名が" + list.length + "冊あります。「まとめて情報を補う」で日本語の表記が見つかれば置き換わります。見つからない本は、押して編集画面で直してください。";
+      "英語（ローマ字）だけの著者名が" + list.length + "冊あります。「すべての本の情報を補う」で日本語の表記が見つかれば置き換わります。見つからない本は、押して編集画面で直してください。";
     const ul = document.createElement("ul");
     ul.className = "author-check-list";
     list.forEach((b) => {
@@ -1519,29 +1528,38 @@
   }
 
   document.querySelector("#settings-section details").addEventListener("toggle", (e) => {
-    if (e.target.open) renderAuthorCheck();
+    if (e.target.open) {
+      renderAuthorCheck();
+      renderCoverStats();
+    }
   });
 
   // ---------- まとめて情報を補う ----------
 
   let bulkRunning = false;
-  $("bulk-refresh-btn").addEventListener("click", async (e) => {
+
+  // onlyMissingCover が true なら、表紙のない本だけを探し直す（冊数が多くても早く終わる）
+  async function runBulkRefresh(btn, onlyMissingCover) {
+    const label = btn.textContent;
     if (bulkRunning) {
       bulkRunning = false;
       return;
     }
-    const isbns = loadCatalog().map((b) => b.isbn);
+    const isbns = loadCatalog()
+      .filter((b) => !onlyMissingCover || !b.cover)
+      .map((b) => b.isbn);
     const bulkStatus = $("bulk-status");
     if (!isbns.length) {
-      bulkStatus.textContent = "目録に本がありません";
+      bulkStatus.textContent = onlyMissingCover ? "表紙のない本はありません" : "目録に本がありません";
       return;
     }
-    const btn = e.currentTarget;
     bulkRunning = true;
+    document.querySelectorAll(".bulk-btn").forEach((x) => (x.disabled = x !== btn));
     btn.textContent = "⏹ 中止する";
     let done = 0;
     let improved = 0;
     let failed = 0;
+    const coversBefore = loadCatalog().filter((b) => b.cover).length;
     for (const isbn of isbns) {
       if (!bulkRunning) break;
       bulkStatus.textContent = "情報を探しています… " + done + " / " + isbns.length + "冊";
@@ -1552,17 +1570,33 @@
         failed++;
       }
       done++;
+      if (done % 10 === 0) renderCoverStats();
       // 各サービスに負担をかけないよう間隔をあける
       await new Promise((r) => setTimeout(r, 400));
     }
+    const newCovers = loadCatalog().filter((b) => b.cover).length - coversBefore;
     bulkStatus.textContent =
       (bulkRunning ? "完了：" : "中止しました：") + done + "冊を確認、" + improved + "冊の情報を補いました" +
-      (failed ? "（" + failed + "冊は通信エラー）" : "");
+      (newCovers > 0 ? "（うち表紙 " + newCovers + "冊）" : "") +
+      (failed ? "。" + failed + "冊は通信エラー" : "");
     bulkRunning = false;
-    btn.textContent = "🔄 まとめて情報を補う";
+    document.querySelectorAll(".bulk-btn").forEach((x) => (x.disabled = false));
+    btn.textContent = label;
     renderCatalog();
     renderAuthorCheck();
-  });
+    renderCoverStats();
+  }
+
+  $("bulk-refresh-btn").addEventListener("click", (e) => runBulkRefresh(e.currentTarget, false));
+  $("bulk-cover-btn").addEventListener("click", (e) => runBulkRefresh(e.currentTarget, true));
+
+  function renderCoverStats() {
+    const list = loadCatalog();
+    const withCover = list.filter((b) => b.cover).length;
+    $("cover-stats").textContent = list.length
+      ? "表紙あり " + withCover + "冊 ／ なし " + (list.length - withCover) + "冊"
+      : "";
+  }
 
   // ---------- 起動 ----------
 

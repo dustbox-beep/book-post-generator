@@ -737,6 +737,11 @@ main {
   color: var(--color-secondary);
 }
 
+.cover-stats {
+  font-weight: 700;
+  color: var(--color-text);
+}
+
 @media (min-width: 600px) {
   .app {
     max-width: 560px;
