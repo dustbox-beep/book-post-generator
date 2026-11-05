@@ -70,7 +70,7 @@
         <button type="button" class="owned-tab" data-owned="released">手放した本 <span id="released-count"></span></button>
       </div>
       <div class="catalog-filters">
-        <input type="search" id="catalog-search" placeholder="🔍 検索" title="タイトル・著者・置き場所・メモなどで検索">
+        <input type="search" id="catalog-search" placeholder="🔍 検索" title="タイトル・著者・メモなどで検索">
         <select id="catalog-status-filter">
           <option value="">読書状態：すべて</option>
           <option value="未読">未読</option>
@@ -131,8 +131,6 @@
     <label>タイトル<input type="text" id="edit-title" required></label>
     <label>著者<input type="text" id="edit-author"></label>
     <label>出版社<input type="text" id="edit-publisher"></label>
-    <label>置き場所<input type="text" id="edit-location" list="location-options" placeholder="例: 書斎の本棚2段目"></label>
-    <datalist id="location-options"></datalist>
     <div class="field-row">
       <label>持ち主
         <select id="edit-owner">

@@ -464,10 +464,9 @@
   // ---------- 書誌情報の取得 ----------
   // openBD（版元ドットコムのデータ）を基本にして、足りない項目を国立国会図書館 → Google Books の順で補う
 
-  const FIELDS = ["title", "author", "publisher", "pubdate", "price", "pages", "form", "genre", "series", "cover"];
+  const FIELDS = ["title", "author", "publisher", "pubdate", "price", "pages", "genre", "cover"];
 
-  // Cコード（書店の分類番号）の2桁目＝発行形態、3〜4桁目＝内容
-  const CCODE_FORM = { 0: "単行本", 1: "文庫", 2: "新書", 3: "全集・双書", 4: "ムック", 5: "辞典・事典", 6: "図鑑", 7: "絵本", 9: "コミック" };
+  // Cコード（書店の分類番号）の3〜4桁目＝内容
   const CCODE_GENRE = {
     "00": "総記", "01": "百科事典", "02": "年鑑・雑誌", "04": "情報科学",
     "10": "哲学", "11": "心理学", "12": "倫理学", "14": "宗教", "15": "仏教", "16": "キリスト教",
@@ -586,13 +585,11 @@
       price = String(supply.Price[0].PriceAmount);
     }
 
-    let form = "";
     let genre = "";
     if (Array.isArray(detail.Subject)) {
       const c = detail.Subject.find((s) => s.SubjectSchemeIdentifier === "78");
       const code = c && String(c.SubjectCode || "").replace(/^C/i, "");
       if (code && /^\d{4}$/.test(code)) {
-        form = CCODE_FORM[code[1]] || "";
         genre = CCODE_GENRE[code.slice(2)] || "";
       }
     }
@@ -608,9 +605,7 @@
       pubdate: normalizeDate(summary.pubdate || ""),
       price,
       pages,
-      form,
       genre,
-      series: summary.series || "",
       cover: summary.cover || "",
     };
   }
@@ -639,9 +634,7 @@
       pubdate: normalizeDate(v.publishedDate || ""),
       price: "",
       pages: v.pageCount ? String(v.pageCount) : "",
-      form: "",
       genre: "",
-      series: "",
       cover: img ? img.replace(/^http:/, "https:").replace(/&edge=curl/, "") : "",
     };
   }
@@ -697,10 +690,7 @@
       pubdate: normalizeDate(pick(item, "issued") || pick(item, "date")),
       price: (pick(item, "price").match(/\d[\d,]*/) || [""])[0].replace(/,/g, ""),
       pages: pagesMatch ? pagesMatch[1] : "",
-      form: "",
       genre,
-      // 例：「新潮文庫 ; つ-4-11」→「新潮文庫」
-      series: pick(item, "seriesTitle").split(/\s*;\s*/)[0],
       cover: "",
     };
   }
@@ -808,9 +798,7 @@
       ["発売日", formatDate(b.pubdate)],
       ["価格", formatPrice(b.price)],
       ["ページ数", b.pages ? b.pages + "ページ" : ""],
-      ["判型", b.form],
       ["ジャンル", b.genre],
-      ["シリーズ", b.series],
     ].filter((r) => r[1]);
   }
 
@@ -888,12 +876,9 @@
       pubdate: book.pubdate || "",
       price: book.price || "",
       pages: book.pages || "",
-      form: book.form || "",
       genre: book.genre || "",
-      series: book.series || "",
       cover: book.cover || "",
       sources: Array.isArray(book.sources) ? book.sources : [],
-      location: book.location || "",
       status: STATUSES.includes(book.status) ? book.status : "未読",
       memo: book.memo || "",
       owned: book.owned !== false,
@@ -1052,7 +1037,7 @@
     const filtered = base.filter((b) => {
       if (status && b.status !== status) return false;
       if (!q) return true;
-      return [b.title, b.author, b.publisher, b.series, b.genre, b.form, b.location, b.memo, b.releaseNote, b.isbn]
+      return [b.title, b.author, b.publisher, b.genre, b.memo, b.releaseNote, b.isbn]
         .join(" ")
         .toLowerCase()
         .includes(q);
@@ -1094,7 +1079,7 @@
         ow.textContent = ownerOf(b);
         meta.appendChild(ow);
       }
-      [b.form, b.genre].filter(Boolean).forEach((t) => {
+      [b.genre].filter(Boolean).forEach((t) => {
         const tag = document.createElement("span");
         tag.className = "c-tag";
         tag.textContent = t;
@@ -1106,11 +1091,6 @@
         rel.className = "c-released";
         rel.textContent = "手放した" + (b.releasedAt ? " " + formatDate(b.releasedAt) : "");
         meta.appendChild(rel);
-      }
-      if (b.location) {
-        const loc = document.createElement("span");
-        loc.textContent = "📍" + b.location;
-        meta.appendChild(loc);
       }
       body.append(title, sub, meta);
       li.appendChild(body);
@@ -1149,7 +1129,6 @@
     $("edit-title").value = b.title || "";
     $("edit-author").value = b.author || "";
     $("edit-publisher").value = b.publisher || "";
-    $("edit-location").value = b.location || "";
     $("edit-status").value = STATUSES.includes(b.status) ? b.status : "未読";
     $("edit-owned").value = isOwned(b) ? "owned" : "released";
     $("edit-owner").value = ownerOf(b);
@@ -1161,14 +1140,6 @@
       "ISBN " + b.isbn + "　登録日 " + new Date(b.addedAt).toLocaleDateString("ja-JP");
     renderEditDetails(b);
 
-    const locations = [...new Set(loadCatalog().map((x) => x.location).filter(Boolean))];
-    const dl = $("location-options");
-    dl.innerHTML = "";
-    locations.forEach((l) => {
-      const o = document.createElement("option");
-      o.value = l;
-      dl.appendChild(o);
-    });
 
     editDialog.showModal();
     // iPhone で開いた瞬間にキーボードが出ないよう、入力欄にカーソルを置かない
@@ -1285,7 +1256,6 @@
       b.title = $("edit-title").value.trim() || b.title;
       b.author = $("edit-author").value.trim();
       b.publisher = $("edit-publisher").value.trim();
-      b.location = $("edit-location").value.trim();
       b.status = $("edit-status").value;
       b.memo = $("edit-memo").value.trim();
       b.owner = normalizeOwner($("edit-owner").value);
@@ -1339,11 +1309,8 @@
     { header: "発売日", width: 14, get: (b) => formatDate(b.pubdate) },
     { header: "価格", width: 8, type: "number", get: (b) => b.price || "" },
     { header: "ページ数", width: 9, type: "number", get: (b) => b.pages || "" },
-    { header: "判型", width: 9, get: (b) => b.form || "" },
     { header: "ジャンル", width: 18, get: (b) => b.genre || "" },
-    { header: "シリーズ", width: 16, get: (b) => b.series || "" },
     { header: "ISBN", width: 16, get: (b) => b.isbn },
-    { header: "置き場所", width: 16, get: (b) => b.location || "" },
     { header: "状態", width: 8, get: (b) => b.status },
     { header: "持ち主", width: 8, get: (b) => ownerOf(b) },
     { header: "所持", width: 11, get: (b) => (isOwned(b) ? "持っている" : "手放した") },
@@ -1610,6 +1577,16 @@
     if (fixed) {
       saveCatalog(list);
       setTimeout(() => toast("著者名の表記を" + fixed + "冊分そろえました", "ok"), 600);
+    }
+  })();
+
+  // 廃止した項目（判型・シリーズ・置き場所）を目録から取り除く
+  (function dropRemovedFields() {
+    const list = loadCatalog();
+    const removed = ["form", "series", "location"];
+    if (list.some((b) => removed.some((k) => k in b))) {
+      list.forEach((b) => removed.forEach((k) => delete b[k]));
+      saveCatalog(list);
     }
   })();
 
