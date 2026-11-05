@@ -1139,23 +1139,12 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  function dateStamp() {
-    const d = new Date();
-    const p = (n) => String(n).padStart(2, "0");
-    return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate());
-  }
-
   // Excel で行が高くならないよう、改行をスペースに置き換えて1行にする
   function oneLine(v) {
     return String(v || "").replace(/\s*[\r\n]+\s*/g, " ").trim();
   }
 
-  function csvCell(v) {
-    const s = String(v == null ? "" : v);
-    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-  }
-
-  // CSV と Excel で共通の列（width は Excel の列幅、文字数の目安）
+  // Excel に書き出す列（width は列幅、文字数の目安）
   const EXPORT_COLUMNS = [
     { header: "タイトル", width: 40, get: (b) => b.title },
     { header: "著者", width: 18, get: (b) => b.author },
@@ -1179,24 +1168,6 @@
   function exportRows(list) {
     return list.map((b) => EXPORT_COLUMNS.map((c) => c.get(b)));
   }
-
-  $("export-csv-btn").addEventListener("click", () => {
-    const list = loadCatalog();
-    if (!list.length) {
-      backupStatus.textContent = "書き出す本がありません";
-      return;
-    }
-    const ISBN_COL = EXPORT_COLUMNS.findIndex((c) => c.header === "ISBN");
-    const lines = [EXPORT_COLUMNS.map((c) => csvCell(c.header)).join(",")].concat(
-      exportRows(list).map((r) =>
-        // ISBN は Excel で数値扱い（指数表示）にならないよう文字列として出力
-        r.map((c, j) => (j === ISBN_COL ? '="' + c + '"' : csvCell(c))).join(",")
-      )
-    );
-    // 先頭のBOMでExcelが文字化けせずに開ける
-    download("蔵書目録_" + dateStamp() + ".csv", "\uFEFF" + lines.join("\r\n"), "text/csv;charset=utf-8");
-    backupStatus.textContent = list.length + "冊をCSVで書き出しました";
-  });
 
   // iCloud Drive などに同じ名前で上書き保存できるよう、ファイル名は固定にする
   const XLSX_FILENAME = "蔵書目録.xlsx";
@@ -1267,13 +1238,6 @@
   }
 
   $("export-xlsx-btn").addEventListener("click", exportExcelAndBackup);
-
-  $("export-json-btn").addEventListener("click", () => {
-    const list = loadCatalog();
-    download("蔵書バックアップ_" + dateStamp() + ".json", backupJson(list), "application/json");
-    markBackedUp();
-    backupStatus.textContent = list.length + "冊をバックアップしました";
-  });
 
   // ---------- バックアップのお知らせ ----------
 
