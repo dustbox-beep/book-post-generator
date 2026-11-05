@@ -602,6 +602,109 @@ main {
   display: none;
 }
 
+.reg-owner-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.reg-owner-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-secondary);
+}
+
+.reg-owner-btns {
+  display: flex;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--color-border);
+}
+
+.reg-owner {
+  border: none;
+  background: none;
+  padding: 6px 16px;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-secondary);
+  cursor: pointer;
+}
+
+.reg-owner.is-active {
+  background: #fff;
+  color: var(--color-text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.reg-owner-note {
+  margin: -4px 0 10px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #2f5f8f;
+}
+
+.reg-owner-note:empty {
+  display: none;
+}
+
+/* 自分以外の本を登録中は、間違えないよう枠を色付けする */
+#scan-section.registering-other {
+  box-shadow: 0 0 0 3px #7fa8d6;
+}
+
+#scan-section.registering-other .reg-owner.is-active {
+  background: #2f5f8f;
+  color: #fff;
+}
+
+.owner-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.owner-tab {
+  flex: 1;
+  border: none;
+  background: none;
+  border-bottom: 2px solid transparent;
+  padding: 6px 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-secondary);
+  cursor: pointer;
+}
+
+.owner-tab.is-active {
+  color: var(--color-text);
+  border-bottom-color: var(--color-primary);
+}
+
+.owner-tab span {
+  font-weight: 400;
+  font-size: 0.75rem;
+}
+
+.c-owner {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.c-owner-other {
+  background: #dce8f5;
+  color: #2f5f8f;
+}
+
+.c-owner-both {
+  background: #e8e0f2;
+  color: #5b3f86;
+}
+
 @media (min-width: 600px) {
   .app {
     max-width: 560px;

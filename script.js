@@ -4,6 +4,11 @@
   const CATALOG_KEY = "book-catalog";
   const SAME_ISBN_COOLDOWN_MS = 4000;
   const STATUSES = ["未読", "読書中", "読了"];
+  // 持ち主。「両方」は2人とも持っている本（目録は1つのISBNにつき1冊のため）
+  const OWNERS = ["自分", "息子"];
+  const BOTH = "両方";
+  const DEFAULT_OWNER = OWNERS[0];
+  const CURRENT_OWNER_KEY = "current-owner";
 
   const $ = (id) => document.getElementById(id);
 
@@ -30,6 +35,7 @@
   let lookupBusy = false;
   let editingIsbn = null;
   let ownedView = "owned"; // 目録で表示中：持っている本 / 手放した本
+  let ownerView = ""; // 目録で表示中の持ち主（空なら全員）
 
   // ---------- 共通ユーティリティ ----------
 
@@ -331,6 +337,25 @@
   document.addEventListener("visibilitychange", () => {
     if (document.hidden && isScanning) stopScan("");
   });
+
+  // ---------- 登録する本の持ち主 ----------
+
+  function renderOwnerPicker() {
+    const cur = getCurrentOwner();
+    document.querySelectorAll(".reg-owner").forEach((b) => b.classList.toggle("is-active", b.dataset.owner === cur));
+    const notDefault = cur !== DEFAULT_OWNER;
+    $("scan-section").classList.toggle("registering-other", notDefault);
+    $("reg-owner-note").textContent = notDefault ? "いまは「" + cur + "」の本として登録します" : "";
+  }
+
+  document.querySelectorAll(".reg-owner").forEach((b) =>
+    b.addEventListener("click", () => {
+      try {
+        localStorage.setItem(CURRENT_OWNER_KEY, b.dataset.owner);
+      } catch {}
+      renderOwnerPicker();
+    })
+  );
 
   // ---------- 写真から読み取る ----------
 
@@ -794,10 +819,35 @@
       status: STATUSES.includes(book.status) ? book.status : "未読",
       memo: book.memo || "",
       owned: book.owned !== false,
+      owner: normalizeOwner(book.owner),
       releasedAt: book.releasedAt || "",
       releaseNote: book.releaseNote || "",
       addedAt: book.addedAt || new Date().toISOString(),
     };
+  }
+
+  // 持ち主が無い古いデータは「自分」の本として扱う
+  function normalizeOwner(o) {
+    return o === BOTH || OWNERS.includes(o) ? o : DEFAULT_OWNER;
+  }
+
+  function ownerOf(b) {
+    return normalizeOwner(b.owner);
+  }
+
+  // 指定した人の本か（「両方」は2人ともの本）
+  function belongsTo(b, person) {
+    const o = ownerOf(b);
+    return o === person || o === BOTH;
+  }
+
+  function getCurrentOwner() {
+    try {
+      const v = localStorage.getItem(CURRENT_OWNER_KEY);
+      return OWNERS.includes(v) ? v : DEFAULT_OWNER;
+    } catch {
+      return DEFAULT_OWNER;
+    }
   }
 
   // 古いデータには owned が無いので「持っている」とみなす
@@ -809,6 +859,15 @@
     const d = new Date();
     const p = (n) => String(n).padStart(2, "0");
     return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+  }
+
+  function setOwner(isbn, owner) {
+    const list = loadCatalog();
+    const b = list.find((x) => x.isbn === isbn);
+    if (!b) return;
+    b.owner = normalizeOwner(owner);
+    saveCatalog(list);
+    renderCatalog();
   }
 
   // 手放した本を「持っている」に戻す。手放した記録はメモに残す
@@ -848,6 +907,7 @@
       );
       if (ok) {
         restoreOwnership(isbn);
+        setOwner(isbn, getCurrentOwner());
         toast("持っている本に戻しました: " + existing.title, "ok");
       } else {
         toast("以前手放した本です: " + existing.title, "warn");
@@ -856,6 +916,21 @@
     }
     if (existing) {
       vibrate([60, 60, 60]);
+      const me = getCurrentOwner();
+      const cur = ownerOf(existing);
+      if (cur !== me && cur !== BOTH) {
+        const ok = confirm(
+          "「" + existing.title + "」は" + cur + "の本として登録済みです。\n" +
+            me + "も持っている本（" + BOTH + "）にしますか？"
+        );
+        if (ok) {
+          setOwner(isbn, BOTH);
+          toast(BOTH + "の本にしました: " + existing.title, "ok");
+        } else {
+          toast(cur + "の本として登録済み: " + existing.title, "warn");
+        }
+        return;
+      }
       toast("登録済み: " + existing.title, "warn");
       return;
     }
@@ -871,9 +946,12 @@
       }
       const notFound = !book;
       if (!book) book = { isbn, title: "(書誌情報なし) ISBN " + isbn };
+      const owner = getCurrentOwner();
+      book.owner = owner;
       if (addBookRecord(book)) {
         vibrate(120);
-        toast((notFound ? "ISBNのみ登録: " : "追加: ") + book.title, notFound ? "warn" : "ok");
+        const who = owner === DEFAULT_OWNER ? "" : "【" + owner + "】";
+        toast(who + (notFound ? "ISBNのみ登録: " : "追加: ") + book.title, notFound ? "warn" : "ok");
       }
     } finally {
       lookupBusy = false;
@@ -888,10 +966,16 @@
     if (document.getElementById("backup-reminder")) renderBackupReminder();
     const q = catalogSearch.value.trim().toLowerCase();
     const status = catalogStatusFilter.value;
-    const ownedList = list.filter(isOwned);
-    const base = ownedView === "released" ? list.filter((b) => !isOwned(b)) : ownedList;
+    const mine = ownerView ? list.filter((b) => belongsTo(b, ownerView)) : list;
+    const ownedList = mine.filter(isOwned);
+    const base = ownedView === "released" ? mine.filter((b) => !isOwned(b)) : ownedList;
     $("owned-count").textContent = ownedList.length + "冊";
-    $("released-count").textContent = list.length - ownedList.length + "冊";
+    $("released-count").textContent = mine.length - ownedList.length + "冊";
+    document.querySelectorAll(".owner-tab").forEach((t) => {
+      const who = t.dataset.owner;
+      const n = list.filter((b) => isOwned(b) && (!who || belongsTo(b, who))).length;
+      t.querySelector("span").textContent = n + "冊";
+    });
     const filtered = base.filter((b) => {
       if (status && b.status !== status) return false;
       if (!q) return true;
@@ -931,6 +1015,12 @@
       st.className = "c-status c-status-" + STATUSES.indexOf(b.status);
       st.textContent = b.status;
       meta.appendChild(st);
+      if (ownerOf(b) !== DEFAULT_OWNER) {
+        const ow = document.createElement("span");
+        ow.className = "c-owner c-owner-" + (ownerOf(b) === BOTH ? "both" : "other");
+        ow.textContent = ownerOf(b);
+        meta.appendChild(ow);
+      }
       [b.form, b.genre].filter(Boolean).forEach((t) => {
         const tag = document.createElement("span");
         tag.className = "c-tag";
@@ -961,6 +1051,14 @@
   catalogSearch.addEventListener("input", renderCatalog);
   catalogStatusFilter.addEventListener("change", renderCatalog);
 
+  document.querySelectorAll(".owner-tab").forEach((t) =>
+    t.addEventListener("click", () => {
+      ownerView = t.dataset.owner;
+      document.querySelectorAll(".owner-tab").forEach((x) => x.classList.toggle("is-active", x === t));
+      renderCatalog();
+    })
+  );
+
   document.querySelectorAll(".owned-tab").forEach((t) =>
     t.addEventListener("click", () => {
       ownedView = t.dataset.owned;
@@ -981,6 +1079,7 @@
     $("edit-location").value = b.location || "";
     $("edit-status").value = STATUSES.includes(b.status) ? b.status : "未読";
     $("edit-owned").value = isOwned(b) ? "owned" : "released";
+    $("edit-owner").value = ownerOf(b);
     $("edit-released-at").value = b.releasedAt || "";
     $("edit-release-note").value = b.releaseNote || "";
     toggleReleaseFields();
@@ -1111,6 +1210,7 @@
       b.location = $("edit-location").value.trim();
       b.status = $("edit-status").value;
       b.memo = $("edit-memo").value.trim();
+      b.owner = normalizeOwner($("edit-owner").value);
       const wasOwned = isOwned(b);
       b.owned = $("edit-owned").value !== "released";
       b.releasedAt = b.owned ? "" : $("edit-released-at").value || todayStr();
@@ -1167,6 +1267,7 @@
     { header: "ISBN", width: 16, get: (b) => b.isbn },
     { header: "置き場所", width: 16, get: (b) => b.location || "" },
     { header: "状態", width: 8, get: (b) => b.status },
+    { header: "持ち主", width: 8, get: (b) => ownerOf(b) },
     { header: "所持", width: 11, get: (b) => (isOwned(b) ? "持っている" : "手放した") },
     { header: "手放した日", width: 14, get: (b) => formatDate(b.releasedAt) },
     { header: "手放し方・売却先", width: 22, get: (b) => b.releaseNote || "" },
@@ -1403,6 +1504,7 @@
     localStorage.removeItem("rakuten-settings");
   } catch {}
 
+  renderOwnerPicker();
   renderCatalog();
   renderBackupReminder();
   requestPersistentStorage();

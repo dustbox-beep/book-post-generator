@@ -15,6 +15,14 @@
 
   <main>
     <section class="card" id="scan-section">
+      <div class="reg-owner-row">
+        <span class="reg-owner-label">登録する本の持ち主</span>
+        <div class="reg-owner-btns">
+          <button type="button" class="reg-owner" data-owner="自分">自分</button>
+          <button type="button" class="reg-owner" data-owner="息子">息子</button>
+        </div>
+      </div>
+      <p id="reg-owner-note" class="reg-owner-note"></p>
       <div id="reader"></div>
       <div class="scan-controls">
         <button id="start-scan-btn" class="btn btn-primary">📷 カメラでスキャン開始</button>
@@ -51,6 +59,11 @@
       <div class="catalog-head">
         <h2>蔵書目録</h2>
         <span id="catalog-count" class="catalog-count"></span>
+      </div>
+      <div class="owner-tabs" role="tablist">
+        <button type="button" class="owner-tab is-active" data-owner="">全員 <span></span></button>
+        <button type="button" class="owner-tab" data-owner="自分">自分 <span></span></button>
+        <button type="button" class="owner-tab" data-owner="息子">息子 <span></span></button>
       </div>
       <div class="owned-tabs" role="tablist">
         <button type="button" class="owned-tab is-active" data-owned="owned">持っている本 <span id="owned-count"></span></button>
@@ -117,6 +130,13 @@
     <label>置き場所<input type="text" id="edit-location" list="location-options" placeholder="例: 書斎の本棚2段目"></label>
     <datalist id="location-options"></datalist>
     <div class="field-row">
+      <label>持ち主
+        <select id="edit-owner">
+          <option value="自分">自分</option>
+          <option value="息子">息子</option>
+          <option value="両方">両方</option>
+        </select>
+      </label>
       <label>読書状態
         <select id="edit-status">
           <option value="未読">未読</option>
@@ -124,13 +144,13 @@
           <option value="読了">読了</option>
         </select>
       </label>
-      <label>所持
-        <select id="edit-owned">
-          <option value="owned">持っている</option>
-          <option value="released">手放した</option>
-        </select>
-      </label>
     </div>
+    <label>所持
+      <select id="edit-owned">
+        <option value="owned">持っている</option>
+        <option value="released">手放した</option>
+      </select>
+    </label>
     <div id="release-fields" class="release-fields" hidden>
       <label>手放した日<input type="date" id="edit-released-at"></label>
       <label>手放し方・売却先など<input type="text" id="edit-release-note" placeholder="例: ブックオフで売却 120円"></label>
