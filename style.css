@@ -705,6 +705,10 @@ main {
   color: #5b3f86;
 }
 
+.dialog-title:focus {
+  outline: none;
+}
+
 @media (min-width: 600px) {
   .app {
     max-width: 560px;

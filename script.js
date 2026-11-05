@@ -703,7 +703,11 @@
   // ---- 整形 ----
   // 「筒井,康隆,1934-」→「筒井康隆」、「Smith,John,1950-」→「John Smith」
   function cleanAuthor(raw) {
-    const s = String(raw || "").replace(/\s+/g, " ").trim();
+    // 「今村, 翔吾, 1984-」のようにカンマの後に空白がある書き方もそろえる
+    const s = String(raw || "")
+      .replace(/\s+/g, " ")
+      .replace(/\s*[,，]\s*/g, ",")
+      .trim();
     if (!s.includes(",")) return s;
     return s
       .split(" ")
@@ -1111,6 +1115,10 @@
     });
 
     editDialog.showModal();
+    // iPhone で開いた瞬間にキーボードが出ないよう、入力欄にカーソルを置かない
+    const active = document.activeElement;
+    if (active && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName)) active.blur();
+    editDialog.scrollTop = 0;
   }
 
   function toggleReleaseFields() {
@@ -1152,7 +1160,8 @@
     FIELDS.forEach((k) => {
       if (!fresh[k]) return;
       const isPlaceholder = k === "title" && /^\(書誌情報なし\)|^\(タイトル不明\)/.test(record.title || "");
-      const isLibraryAuthor = k === "author" && /,\d{4}-/.test(record.author || "");
+      // 図書館式（「筒井,康隆,1934-」）や、以前の版で崩れた「今村、翔吾、1984-」も直す
+      const isLibraryAuthor = k === "author" && /[,，、]\s*\d{4}-/.test(record.author || "");
       // 英語だけの著者名は、日本語の表記が見つかれば置き換える
       const isNonJapaneseAuthor = k === "author" && !hasJapanese(record.author) && hasJapanese(fresh.author);
       if (!record[k] || isPlaceholder || isLibraryAuthor || isNonJapaneseAuthor) {
