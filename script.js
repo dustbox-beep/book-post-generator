@@ -8,7 +8,9 @@
   const OWNERS = ["自分", "息子"];
   const BOTH = "両方";
   const DEFAULT_OWNER = OWNERS[0];
-  const CURRENT_OWNER_KEY = "current-owner";
+  // 登録中の持ち主は保存しない（アプリを開き直すと「自分」に戻る）
+  const OWNER_RESET_AFTER_MS = 10 * 60 * 1000; // 10分以上ほかのアプリにいたら「自分」に戻す
+  let currentOwner = DEFAULT_OWNER;
 
   const $ = (id) => document.getElementById(id);
 
@@ -350,12 +352,28 @@
 
   document.querySelectorAll(".reg-owner").forEach((b) =>
     b.addEventListener("click", () => {
-      try {
-        localStorage.setItem(CURRENT_OWNER_KEY, b.dataset.owner);
-      } catch {}
+      currentOwner = OWNERS.includes(b.dataset.owner) ? b.dataset.owner : DEFAULT_OWNER;
       renderOwnerPicker();
     })
   );
+
+  // iPhone ではアプリを閉じずに裏に回すだけのことも多いので、
+  // しばらく離れていたら「自分」に戻す
+  let hiddenAt = 0;
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      hiddenAt = Date.now();
+    } else if (hiddenAt && Date.now() - hiddenAt >= OWNER_RESET_AFTER_MS && currentOwner !== DEFAULT_OWNER) {
+      currentOwner = DEFAULT_OWNER;
+      renderOwnerPicker();
+      toast("登録する本の持ち主を「" + DEFAULT_OWNER + "」に戻しました");
+    }
+  });
+
+  // 以前の版で保存していた「登録中の持ち主」を消す
+  try {
+    localStorage.removeItem("current-owner");
+  } catch {}
 
   // ---------- 写真から読み取る ----------
 
@@ -842,12 +860,7 @@
   }
 
   function getCurrentOwner() {
-    try {
-      const v = localStorage.getItem(CURRENT_OWNER_KEY);
-      return OWNERS.includes(v) ? v : DEFAULT_OWNER;
-    } catch {
-      return DEFAULT_OWNER;
-    }
+    return currentOwner;
   }
 
   // 古いデータには owned が無いので「持っている」とみなす
