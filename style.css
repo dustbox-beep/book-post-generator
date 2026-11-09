@@ -280,24 +280,6 @@ main {
   background: var(--color-bg);
 }
 
-.c-cover {
-  width: 44px;
-  height: 64px;
-  object-fit: cover;
-  border-radius: 4px;
-  background: var(--color-border);
-  flex-shrink: 0;
-}
-
-.c-cover.no-cover {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.6rem;
-  color: var(--color-secondary);
-  text-align: center;
-}
-
 .c-body {
   min-width: 0;
   flex: 1;
@@ -524,10 +506,6 @@ main {
   background: #f7f5f0;
 }
 
-.catalog-list li.is-released .c-cover {
-  opacity: 0.5;
-}
-
 .c-released {
   padding: 1px 8px;
   border-radius: 999px;
@@ -735,11 +713,6 @@ main {
   text-align: center;
   font-size: 0.75rem;
   color: var(--color-secondary);
-}
-
-.cover-stats {
-  font-weight: 700;
-  color: var(--color-text);
 }
 
 @media (min-width: 600px) {

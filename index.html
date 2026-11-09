@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Bookworm</title>
 <meta name="apple-mobile-web-app-title" content="Bookworm">
-<link rel="stylesheet" href="style.css?v=20261109b">
+<link rel="stylesheet" href="style.css?v=20261109c">
 </head>
 <body>
 <div class="app">
@@ -119,10 +119,8 @@
         <div id="author-check"></div>
         <hr class="divider">
         <h3 class="sub-h">登録済みの本の情報を補う</h3>
-        <p class="note">目録の本について、空いている項目（表紙・価格・ページ数など）をまとめて探し直します。手で直したタイトルなどは上書きしません。</p>
-        <p id="cover-stats" class="note cover-stats"></p>
+        <p class="note">目録の本について、空いている項目（価格・ページ数など）をまとめて探し直します。手で直したタイトルなどは上書きしません。</p>
         <div class="btn-grid">
-          <button type="button" id="bulk-cover-btn" class="btn btn-secondary bulk-btn">🖼️ 表紙がない本だけ探す</button>
           <button type="button" id="bulk-refresh-btn" class="btn btn-secondary bulk-btn">🔄 すべての本の情報を補う</button>
         </div>
         <p id="bulk-status" class="status-text"></p>
@@ -179,7 +177,7 @@
 <div id="toast" class="toast" hidden></div>
 
 <script src="vendor/zxing-library-0.21.3.min.js"></script>
-<script src="xlsx-writer.js?v=20261109b"></script>
-<script src="script.js?v=20261109b"></script>
+<script src="xlsx-writer.js?v=20261109c"></script>
+<script src="script.js?v=20261109c"></script>
 </body>
 </html>

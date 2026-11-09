@@ -2,7 +2,7 @@
   "use strict";
 
   // 更新のたびに変える。index.html の「?v=」と同じ値にする（画面下に表示して、最新版か確かめられるようにする）
-  const APP_VERSION = "20261109b";
+  const APP_VERSION = "20261109c";
 
   const CATALOG_KEY = "book-catalog";
   const SAME_ISBN_COOLDOWN_MS = 4000;
@@ -467,7 +467,7 @@
   // ---------- 書誌情報の取得 ----------
   // openBD（版元ドットコムのデータ）を基本にして、足りない項目を国立国会図書館 → Google Books の順で補う
 
-  const FIELDS = ["title", "author", "publisher", "pubdate", "price", "pages", "genre", "cover"];
+  const FIELDS = ["title", "author", "publisher", "pubdate", "price", "pages", "genre"];
 
   // Cコード（書店の分類番号）の3〜4桁目＝内容
   const CCODE_GENRE = {
@@ -502,7 +502,7 @@
     return [fetchOpenBD(isbn), fetchGoogleBooks(isbn), fetchNDL(isbn)];
   }
 
-  // 届いた情報をまとめる。表紙は openBD のものだけ使い、画像の確認（時間がかかる）はしない
+  // 届いた情報をまとめる
   function combineSources(isbn, found) {
     if (!found.length) return null;
     // 優先順：openBD → 国立国会図書館 → Google
@@ -512,14 +512,10 @@
     // 項目ごとに、実際に使った情報源を記録する
     const fieldSources = {};
     FIELDS.forEach((k) => {
-      if (k === "cover") return;
       const hit = found.find((f) => f[k]);
       book[k] = hit ? hit[k] : "";
       if (hit) fieldSources[k] = hit.source;
     });
-    const ob = found.find((f) => f.source === "openbd" && f.cover);
-    book.cover = ob ? ob.cover : "";
-    if (ob) fieldSources.cover = "openbd";
     // 著者：日本語（かな・漢字）の表記を最優先する。
     // 同じ条件なら、openBD の図書館式（例：筒井,康隆,1934-）より他の情報源の表記を優先
     const authorScore = (f) => (hasJapanese(f.author) ? 2 : 0) + (f.rawAuthorLibraryStyle ? 0 : 1);
@@ -537,21 +533,6 @@
     return book;
   }
 
-  // openBD に表紙が無いときの表紙探し：国立国会図書館の書影 → Google
-  // （Google の画像は日本の本だと「画像なし」の絵のことが多いので最後にする）
-  async function resolveCover(isbn, found, ndlCoverCheck) {
-    if (await (ndlCoverCheck || imageExists(ndlThumbnailUrl(isbn)))) return { cover: ndlThumbnailUrl(isbn), source: "ndl" };
-    const g = found.find((f) => f.source === "google" && f.cover);
-    return g ? { cover: g.cover, source: "google" } : null;
-  }
-
-  function applyCover(book, c) {
-    if (!c) return;
-    book.cover = c.cover;
-    book.fieldSources.cover = c.source;
-    book.sources = sourcesUsed(book.fieldSources);
-  }
-
   async function collectAll(tasks) {
     const results = await Promise.allSettled(tasks);
     const found = results.filter((r) => r.status === "fulfilled" && r.value).map((r) => r.value);
@@ -559,7 +540,7 @@
     return { found, allFailed };
   }
 
-  // すべての情報源と表紙を待ってまとめる（「情報を再取得」「まとめて補う」用）
+  // すべての情報源を待ってまとめる（「情報を再取得」「まとめて補う」用）
   async function fetchBook(isbn) {
     const { found, allFailed } = await collectAll(startSources(isbn));
     if (!found.length) {
@@ -567,16 +548,12 @@
       if (allFailed) throw new Error("all sources failed");
       return null;
     }
-    const book = combineSources(isbn, found);
-    if (!book.cover) applyCover(book, await resolveCover(isbn, found));
-    return book;
+    return combineSources(isbn, found);
   }
 
-  // 登録用：最初に届いた情報ですぐ返し、残り（他の情報源・表紙）は later で後から届ける
+  // 登録用：最初に届いた情報ですぐ返し、残りの情報源の結果は later で後から届ける
   async function fetchBookFast(isbn) {
     const tasks = startSources(isbn);
-    // 表紙の確認も同時に始めておく（他の情報源を待ってから始めると、その分遅くなる）
-    const ndlCoverCheck = imageExists(ndlThumbnailUrl(isbn));
     const results = tasks.map(() => null);
     const wrapped = tasks.map((p, i) =>
       p.then(
@@ -593,9 +570,7 @@
     const foundNow = results.filter((r) => r && r.ok && r.v).map((r) => r.v);
     const later = all.then(async () => {
       const { found } = await collectAll(tasks);
-      const full = combineSources(isbn, found);
-      if (full && !full.cover) applyCover(full, await resolveCover(isbn, found, ndlCoverCheck));
-      return full;
+      return combineSources(isbn, found);
     });
     if (foundNow.length) return { book: combineSources(isbn, foundNow), later };
     // まだ何も届いていなければ、全部の結果を待つ
@@ -617,31 +592,6 @@
   function sourcesUsed(fieldSources) {
     const used = new Set(Object.values(fieldSources));
     return ["openbd", "ndl", "google"].filter((x) => used.has(x));
-  }
-
-  // 画像が実際に読み込めるか確かめる（存在しない書影を表紙にしないため）
-  // 電波が弱いときに「表紙なし」と判断しないよう、時間切れのときは待ち時間を延ばしてもう一度試す。
-  // 「画像が無い」とはっきり返ってきたとき（404など）は、すぐに諦める
-  async function imageExists(url) {
-    const first = await tryLoadImage(url, 8000);
-    if (first !== "timeout") return first === "ok";
-    return (await tryLoadImage(url + (url.includes("?") ? "&" : "?") + "retry=1", 15000)) === "ok";
-  }
-
-  function tryLoadImage(url, timeoutMs) {
-    return new Promise((resolve) => {
-      const img = new Image();
-      const timer = setTimeout(() => done("timeout"), timeoutMs);
-      function done(result) {
-        clearTimeout(timer);
-        img.onload = img.onerror = null;
-        img.src = "";
-        resolve(result);
-      }
-      img.onload = () => done(img.naturalWidth > 1 && img.naturalHeight > 1 ? "ok" : "none");
-      img.onerror = () => done("none");
-      img.src = url;
-    });
   }
 
   // ---- openBD ----
@@ -691,7 +641,6 @@
       price,
       pages,
       genre,
-      cover: summary.cover || "",
     };
   }
 
@@ -709,7 +658,6 @@
     );
     if (!item) return null;
     const v = item.volumeInfo;
-    const img = v.imageLinks && (v.imageLinks.thumbnail || v.imageLinks.smallThumbnail);
     return {
       source: "google",
       isbn,
@@ -720,7 +668,6 @@
       price: "",
       pages: v.pageCount ? String(v.pageCount) : "",
       genre: "",
-      cover: img ? img.replace(/^http:/, "https:").replace(/&edge=curl/, "") : "",
     };
   }
 
@@ -729,10 +676,6 @@
   // NDC（日本十進分類法）の大まかな区分
   const NDC_GENRE = { 0: "総記", 1: "哲学・宗教", 2: "歴史・地理", 3: "社会科学", 4: "自然科学", 5: "技術・工学", 6: "産業", 7: "芸術・スポーツ", 8: "言語", 9: "文学" };
   const NDC_DETAIL = { 913: "日本文学（小説）", 914: "日本文学（評論・随筆）", 911: "日本文学（詩歌）", 933: "外国文学（小説）", 923: "外国文学（小説）", 953: "外国文学（小説）", 726: "コミックス・劇画" };
-
-  function ndlThumbnailUrl(isbn) {
-    return "https://ndlsearch.ndl.go.jp/thumbnail/" + isbn + ".jpg";
-  }
 
   async function fetchNDL(isbn) {
     const res = await fetchWithTimeout(NDL_OPENSEARCH + "?cnt=5&isbn=" + encodeURIComponent(isbn));
@@ -776,7 +719,6 @@
       price: (pick(item, "price").match(/\d[\d,]*/) || [""])[0].replace(/,/g, ""),
       pages: pagesMatch ? pagesMatch[1] : "",
       genre,
-      cover: "",
     };
   }
 
@@ -905,27 +847,6 @@
 
   // ---------- 表示用の部品 ----------
 
-  function coverElement(book, className) {
-    if (book.cover) {
-      const img = document.createElement("img");
-      img.src = book.cover;
-      img.alt = book.title;
-      img.loading = "lazy";
-      if (className) img.className = className;
-      img.addEventListener("error", () => {
-        const ph = document.createElement("div");
-        ph.className = (className ? className + " " : "") + "no-cover";
-        ph.textContent = "表紙なし";
-        img.replaceWith(ph);
-      });
-      return img;
-    }
-    const div = document.createElement("div");
-    div.className = (className ? className + " " : "") + "no-cover";
-    div.textContent = "表紙なし";
-    return div;
-  }
-
   // ---------- 目録データ ----------
 
   function loadCatalog() {
@@ -962,7 +883,6 @@
       price: book.price || "",
       pages: book.pages || "",
       genre: book.genre || "",
-      cover: book.cover || "",
       sources: Array.isArray(book.sources) ? book.sources : [],
       status: STATUSES.includes(book.status) ? book.status : "未読",
       memo: book.memo || "",
@@ -1104,7 +1024,7 @@
     }
   }
 
-  // 登録のあとに届いた情報（他の情報源・表紙）で、空いている項目を埋める
+  // 登録のあとに届いた他の情報源の結果で、空いている項目を埋める
   function fillInLater(isbn, early, later) {
     later
       .then((full) => {
@@ -1171,7 +1091,6 @@
     const frag = document.createDocumentFragment();
     filtered.forEach((b) => {
       const li = document.createElement("li");
-      li.appendChild(coverElement(b, "c-cover"));
 
       const body = document.createElement("div");
       body.className = "c-body";
@@ -1630,29 +1549,23 @@
   }
 
   document.querySelector("#settings-section details").addEventListener("toggle", (e) => {
-    if (e.target.open) {
-      renderAuthorCheck();
-      renderCoverStats();
-    }
+    if (e.target.open) renderAuthorCheck();
   });
 
   // ---------- まとめて情報を補う ----------
 
   let bulkRunning = false;
 
-  // onlyMissingCover が true なら、表紙のない本だけを探し直す（冊数が多くても早く終わる）
-  async function runBulkRefresh(btn, onlyMissingCover) {
+  async function runBulkRefresh(btn) {
     const label = btn.textContent;
     if (bulkRunning) {
       bulkRunning = false;
       return;
     }
-    const isbns = loadCatalog()
-      .filter((b) => !onlyMissingCover || !b.cover)
-      .map((b) => b.isbn);
+    const isbns = loadCatalog().map((b) => b.isbn);
     const bulkStatus = $("bulk-status");
     if (!isbns.length) {
-      bulkStatus.textContent = onlyMissingCover ? "表紙のない本はありません" : "目録に本がありません";
+      bulkStatus.textContent = "目録に本がありません";
       return;
     }
     bulkRunning = true;
@@ -1661,7 +1574,6 @@
     let done = 0;
     let improved = 0;
     let failed = 0;
-    const coversBefore = loadCatalog().filter((b) => b.cover).length;
     for (const isbn of isbns) {
       if (!bulkRunning) break;
       bulkStatus.textContent = "情報を探しています… " + done + " / " + isbns.length + "冊";
@@ -1672,33 +1584,21 @@
         failed++;
       }
       done++;
-      if (done % 10 === 0) renderCoverStats();
       // 各サービスに負担をかけないよう間隔をあける
       await new Promise((r) => setTimeout(r, 400));
     }
-    const newCovers = loadCatalog().filter((b) => b.cover).length - coversBefore;
     bulkStatus.textContent =
       (bulkRunning ? "完了：" : "中止しました：") + done + "冊を確認、" + improved + "冊の情報を補いました" +
-      (newCovers > 0 ? "（うち表紙 " + newCovers + "冊）" : "") +
       (failed ? "。" + failed + "冊は通信エラー" : "");
     bulkRunning = false;
     document.querySelectorAll(".bulk-btn").forEach((x) => (x.disabled = false));
     btn.textContent = label;
     renderCatalog();
     renderAuthorCheck();
-    renderCoverStats();
   }
 
-  $("bulk-refresh-btn").addEventListener("click", (e) => runBulkRefresh(e.currentTarget, false));
-  $("bulk-cover-btn").addEventListener("click", (e) => runBulkRefresh(e.currentTarget, true));
+  $("bulk-refresh-btn").addEventListener("click", (e) => runBulkRefresh(e.currentTarget));
 
-  function renderCoverStats() {
-    const list = loadCatalog();
-    const withCover = list.filter((b) => b.cover).length;
-    $("cover-stats").textContent = list.length
-      ? "表紙あり " + withCover + "冊 ／ なし " + (list.length - withCover) + "冊"
-      : "";
-  }
 
   // ---------- 起動 ----------
 
@@ -1719,10 +1619,10 @@
     }
   })();
 
-  // 廃止した項目（判型・シリーズ・置き場所）を目録から取り除く
+  // 廃止した項目（判型・シリーズ・置き場所・表紙）を目録から取り除く
   (function dropRemovedFields() {
     const list = loadCatalog();
-    const removed = ["form", "series", "location"];
+    const removed = ["form", "series", "location", "cover"];
     if (list.some((b) => removed.some((k) => k in b))) {
       list.forEach((b) => removed.forEach((k) => delete b[k]));
       saveCatalog(list);
