@@ -2,7 +2,7 @@
   "use strict";
 
   // 更新のたびに変える。index.html の「?v=」と同じ値にする（画面下に表示して、最新版か確かめられるようにする）
-  const APP_VERSION = "20261109e";
+  const APP_VERSION = "20261109f";
 
   const CATALOG_KEY = "book-catalog";
   const SAME_ISBN_COOLDOWN_MS = 4000;
@@ -65,8 +65,34 @@
     }, 2500);
   }
 
+  // iPhone の Safari は navigator.vibrate に対応していない。
+  // iOS 18 以降は「スイッチ型のチェックボックス」を切り替えると軽く振動するので、それを使う。
+  let hapticLabel = null;
+  function iosHaptic() {
+    if (!hapticLabel) {
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.setAttribute("switch", "");
+      input.id = "haptic-switch";
+      hapticLabel = document.createElement("label");
+      hapticLabel.htmlFor = "haptic-switch";
+      const wrap = document.createElement("div");
+      wrap.setAttribute("aria-hidden", "true");
+      wrap.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0;pointer-events:none";
+      wrap.append(input, hapticLabel);
+      document.body.appendChild(wrap);
+    }
+    hapticLabel.click();
+  }
+
   function vibrate(pattern) {
-    if (navigator.vibrate) navigator.vibrate(pattern);
+    if (navigator.vibrate) {
+      navigator.vibrate(pattern);
+      return;
+    }
+    // 配列（振動・休み・振動…）なら振動の回数だけ鳴らす
+    const pulses = Array.isArray(pattern) ? Math.ceil(pattern.length / 2) : 1;
+    for (let i = 0; i < pulses; i++) setTimeout(iosHaptic, i * 150);
   }
 
   function escapeHtml(str) {
