@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 ## このアプリについて
-- 「蔵書スキャン」: 本のバーコード(ISBN)を読み取って蔵書目録を作る、スマホ向けの静的Webアプリ。
+- 「Bookworm」(旧名: 蔵書スキャン): 本のバーコード(ISBN)を読み取って蔵書目録を作る、スマホ向けの静的Webアプリ。
 - ビルド不要。`index.html` / `script.js` / `style.css` / `xlsx-writer.js` をそのまま配信する。
 - 書誌情報は openBD → 国立国会図書館(NDL) → Google Books の順で取得する。
 - バーコード読み取りは同梱の `vendor/zxing-library-0.21.3.min.js` を使う(外部CDNから読み込まない)。
