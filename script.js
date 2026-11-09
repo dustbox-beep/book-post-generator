@@ -2,7 +2,7 @@
   "use strict";
 
   // 更新のたびに変える。index.html の「?v=」と同じ値にする（画面下に表示して、最新版か確かめられるようにする）
-  const APP_VERSION = "20261109f";
+  const APP_VERSION = "20261109g";
 
   const CATALOG_KEY = "book-catalog";
   const SAME_ISBN_COOLDOWN_MS = 4000;
@@ -116,7 +116,37 @@
 
   // 本のISBNは978/979で始まる（日本の本の2段目のバーコード「192…」は価格コードなので除外）
   function isBookIsbn(isbn) {
-    return /^97[89]\d{10}$/.test(isbn);
+    return /^97[89]\d{10}$/.test(isbn) || isMagazineCode(isbn);
+  }
+
+  // ---------- 雑誌 ----------
+  // 雑誌のバーコード（定期刊行物コード）: 491 + 0 + 雑誌コード5桁 + 月号2桁 + 年の下1桁 + チェック数字
+  function isMagazineCode(code) {
+    if (!/^491\d{10}$/.test(code)) return false;
+    let sum = 0;
+    for (let i = 0; i < 12; i++) sum += Number(code[i]) * (i % 2 === 0 ? 1 : 3);
+    return (10 - (sum % 10)) % 10 === Number(code[12]);
+  }
+
+  function parseMagazineCode(code) {
+    const magCode = code.slice(4, 9);
+    const issue = Number(code.slice(9, 11));
+    const yearDigit = Number(code[11]);
+    // 年は下1桁しか無いので、来年以前で一番近い年とみなす
+    const limit = new Date().getFullYear() + 1;
+    let year = limit - ((limit - yearDigit) % 10 + 10) % 10;
+    return { magCode, issue, year };
+  }
+
+  function magazineIssueLabel(m) {
+    const n = m.issue >= 1 && m.issue <= 12 ? m.issue + "月号" : "第" + m.issue + "号";
+    return m.year + "年" + n;
+  }
+
+  // 同じ雑誌を前に登録していれば、その雑誌名を使う（バックアップから戻しても引き継がれる）
+  function knownMagazineName(magCode) {
+    const hit = loadCatalog().find((b) => b.kind === "magazine" && b.magazineCode === magCode && b.magazine);
+    return hit ? hit.magazine : "";
   }
 
   function scanHint() {
@@ -427,7 +457,7 @@
     }
     if (!isbn) {
       scanStatus.textContent = "";
-      showError("写真からISBNバーコードを見つけられませんでした。バーコードが大きく写るように、ピントを合わせて撮り直してください。");
+      showError("写真から本・雑誌のバーコードを見つけられませんでした。バーコードが大きく写るように、ピントを合わせて撮り直してください。");
       return;
     }
     scanStatus.textContent = "読み取りました: " + isbn;
@@ -483,7 +513,7 @@
     e.preventDefault();
     const isbn = normalizeIsbn(manualInput.value);
     if (!isbn) {
-      showError("正しいISBN（10桁または13桁）を入力してください。");
+      showError("正しいISBN（10桁または13桁）か、雑誌のバーコードの数字（491で始まる13桁）を入力してください。");
       return;
     }
     manualInput.value = "";
@@ -910,6 +940,9 @@
       pages: book.pages || "",
       genre: book.genre || "",
       sources: Array.isArray(book.sources) ? book.sources : [],
+      ...(book.kind === "magazine"
+        ? { kind: "magazine", magazine: book.magazine || "", magazineCode: book.magazineCode || "" }
+        : {}),
       status: STATUSES.includes(book.status) ? book.status : "未読",
       memo: book.memo || "",
       owned: book.owned !== false,
@@ -1023,6 +1056,10 @@
       toast("登録済み: " + existing.title, "warn");
       return;
     }
+    if (isMagazineCode(isbn)) {
+      addMagazine(isbn);
+      return;
+    }
     lookupBusy = true;
     scanStatus.textContent = "書誌情報を取得中... (" + isbn + ")";
     try {
@@ -1047,6 +1084,44 @@
     } finally {
       lookupBusy = false;
       scanStatus.textContent = isScanning ? scanHint() : "";
+    }
+  }
+
+  function addMagazine(code) {
+    const m = parseMagazineCode(code);
+    let name = knownMagazineName(m.magCode);
+    if (!name) {
+      // 初めての雑誌だけ名前を聞く（読み取りは止まる）
+      lookupBusy = true;
+      try {
+        const input = prompt(
+          "初めて読み取る雑誌です。雑誌名を入力してください。\n（次からは同じ雑誌なら自動で入ります）\n" +
+            magazineIssueLabel(m)
+        );
+        name = (input || "").trim();
+      } finally {
+        lookupBusy = false;
+      }
+      if (!name) {
+        toast("雑誌の登録をやめました", "warn");
+        return;
+      }
+    }
+    const owner = getCurrentOwner();
+    const book = {
+      isbn: code,
+      title: name + " " + magazineIssueLabel(m),
+      pubdate: m.issue >= 1 && m.issue <= 12 ? m.year + "-" + String(m.issue).padStart(2, "0") : "",
+      genre: "雑誌",
+      kind: "magazine",
+      magazine: name,
+      magazineCode: m.magCode,
+      owner,
+    };
+    if (addBookRecord(book)) {
+      vibrate(120);
+      const who = owner === DEFAULT_OWNER ? "" : "【" + owner + "】";
+      toast(who + "追加: " + book.title, "ok");
     }
   }
 
@@ -1212,7 +1287,7 @@
     toggleReleaseFields();
     $("edit-memo").value = b.memo || "";
     $("edit-meta").textContent =
-      "ISBN " + b.isbn + "　登録日 " + new Date(b.addedAt).toLocaleDateString("ja-JP");
+      (b.kind === "magazine" ? "雑誌コード " : "ISBN ") + b.isbn + "　登録日 " + new Date(b.addedAt).toLocaleDateString("ja-JP");
     renderEditDetails(b);
 
 
@@ -1385,7 +1460,7 @@
     { header: "価格", width: 8, type: "number", get: (b) => b.price || "" },
     { header: "ページ数", width: 9, type: "number", get: (b) => b.pages || "" },
     { header: "ジャンル", width: 18, get: (b) => b.genre || "" },
-    { header: "ISBN", width: 16, get: (b) => b.isbn },
+    { header: "ISBN・雑誌コード", width: 16, get: (b) => b.isbn },
     { header: "状態", width: 8, get: (b) => b.status },
     { header: "持ち主", width: 8, get: (b) => ownerOf(b) },
     { header: "所持", width: 11, get: (b) => (isOwned(b) ? "持っている" : "手放した") },
