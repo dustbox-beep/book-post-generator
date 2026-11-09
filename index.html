@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Bookworm</title>
 <meta name="apple-mobile-web-app-title" content="Bookworm">
-<link rel="stylesheet" href="style.css?v=20261109c">
+<link rel="stylesheet" href="style.css?v=20261109d">
 </head>
 <body>
 <div class="app">
@@ -70,6 +70,11 @@
       <div class="owned-tabs" role="tablist">
         <button type="button" class="owned-tab is-active" data-owned="owned">持っている本 <span id="owned-count"></span></button>
         <button type="button" class="owned-tab" data-owned="released">手放した本 <span id="released-count"></span></button>
+      </div>
+      <div class="status-summary" id="status-summary">
+        <button type="button" class="status-chip c-status-0" data-status="未読">未読 <span></span></button>
+        <button type="button" class="status-chip c-status-1" data-status="読書中">読書中 <span></span></button>
+        <button type="button" class="status-chip c-status-2" data-status="読了">読了 <span></span></button>
       </div>
       <div class="catalog-filters">
         <input type="search" id="catalog-search" placeholder="🔍 検索" title="タイトル・著者・メモなどで検索">
@@ -177,7 +182,7 @@
 <div id="toast" class="toast" hidden></div>
 
 <script src="vendor/zxing-library-0.21.3.min.js"></script>
-<script src="xlsx-writer.js?v=20261109c"></script>
-<script src="script.js?v=20261109c"></script>
+<script src="xlsx-writer.js?v=20261109d"></script>
+<script src="script.js?v=20261109d"></script>
 </body>
 </html>

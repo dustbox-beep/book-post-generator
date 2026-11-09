@@ -2,7 +2,7 @@
   "use strict";
 
   // 更新のたびに変える。index.html の「?v=」と同じ値にする（画面下に表示して、最新版か確かめられるようにする）
-  const APP_VERSION = "20261109c";
+  const APP_VERSION = "20261109d";
 
   const CATALOG_KEY = "book-catalog";
   const SAME_ISBN_COOLDOWN_MS = 4000;
@@ -1068,6 +1068,15 @@
       const n = list.filter((b) => isOwned(b) && (!who || belongsTo(b, who))).length;
       t.querySelector("span").textContent = n + "冊";
     });
+    // 読書状態ごとの冊数（表示中の持ち主・所持の区分の中で数える）
+    STATUSES.forEach((st) => {
+      const n = base.filter((b) => (STATUSES.includes(b.status) ? b.status : "未読") === st).length;
+      const chip = document.querySelector('.status-chip[data-status="' + st + '"]');
+      chip.querySelector("span").textContent = n + "冊";
+      chip.classList.toggle("is-active", status === st);
+      const opt = catalogStatusFilter.querySelector('option[value="' + st + '"]');
+      if (opt) opt.textContent = st + "（" + n + "冊）";
+    });
     const filtered = base.filter((b) => {
       if (status && b.status !== status) return false;
       if (!q) return true;
@@ -1136,6 +1145,13 @@
 
   catalogSearch.addEventListener("input", renderCatalog);
   catalogStatusFilter.addEventListener("change", renderCatalog);
+  document.querySelectorAll(".status-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      // 押した状態で絞り込む。もう一度押すと解除
+      catalogStatusFilter.value = catalogStatusFilter.value === chip.dataset.status ? "" : chip.dataset.status;
+      renderCatalog();
+    });
+  });
 
   document.querySelectorAll(".owner-tab").forEach((t) =>
     t.addEventListener("click", () => {
