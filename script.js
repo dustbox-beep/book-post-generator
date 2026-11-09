@@ -2,7 +2,7 @@
   "use strict";
 
   // 更新のたびに変える。index.html の「?v=」と同じ値にする（画面下に表示して、最新版か確かめられるようにする）
-  const APP_VERSION = "20261109a";
+  const APP_VERSION = "20261109b";
 
   const CATALOG_KEY = "book-catalog";
   const SAME_ISBN_COOLDOWN_MS = 4000;
@@ -483,41 +483,43 @@
     "90": "文学総記", "91": "日本文学総記", "92": "日本文学（詩歌）", "93": "日本文学（小説）", "95": "日本文学（評論・随筆）", "97": "外国文学（小説）", "98": "外国文学（その他）",
   };
 
-  async function fetchBook(isbn) {
-    const tasks = [fetchOpenBD(isbn), fetchGoogleBooks(isbn), fetchNDL(isbn)];
-    const results = await Promise.allSettled(tasks);
-    const found = results.filter((r) => r.status === "fulfilled" && r.value).map((r) => r.value);
-    if (!found.length) {
-      // すべて通信エラーなら呼び出し元にエラーとして伝える
-      if (results.every((r) => r.status === "rejected")) throw new Error("all sources failed");
-      return null;
+  const SOURCE_TIMEOUT_MS = 10000; // 返事のない情報源はこの時間で打ち切る
+  const PREFER_OPENBD_WAIT_MS = 1500; // 他の情報源が先に届いても、openBD をこの時間だけ待つ
+
+  // 時間切れのある fetch（電波が悪いときに、いつまでも待たないようにする）
+  async function fetchWithTimeout(url, timeoutMs = SOURCE_TIMEOUT_MS) {
+    const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timer = setTimeout(() => ctrl && ctrl.abort(), timeoutMs);
+    try {
+      return await fetch(url, ctrl ? { signal: ctrl.signal } : undefined);
+    } finally {
+      clearTimeout(timer);
     }
+  }
+
+  // 3つの情報源への問い合わせを同時に始める（並びは openBD, Google, NDL）
+  function startSources(isbn) {
+    return [fetchOpenBD(isbn), fetchGoogleBooks(isbn), fetchNDL(isbn)];
+  }
+
+  // 届いた情報をまとめる。表紙は openBD のものだけ使い、画像の確認（時間がかかる）はしない
+  function combineSources(isbn, found) {
+    if (!found.length) return null;
     // 優先順：openBD → 国立国会図書館 → Google
     const order = { openbd: 0, ndl: 1, google: 2 };
-    found.sort((a, b) => order[a.source] - order[b.source]);
+    found = found.slice().sort((a, b) => order[a.source] - order[b.source]);
     const book = { isbn };
     // 項目ごとに、実際に使った情報源を記録する
     const fieldSources = {};
     FIELDS.forEach((k) => {
+      if (k === "cover") return;
       const hit = found.find((f) => f[k]);
       book[k] = hit ? hit[k] : "";
       if (hit) fieldSources[k] = hit.source;
     });
-    // 表紙：openBD に無ければ国立国会図書館の書影、それも無ければ Google
-    // （Google の画像は日本の本だと「画像なし」の絵のことが多いので最後にする）
-    const primaryCover = found.find((f) => f.source === "openbd" && f.cover);
-    if (primaryCover) {
-      book.cover = primaryCover.cover;
-      fieldSources.cover = "openbd";
-    } else if (await imageExists(ndlThumbnailUrl(isbn))) {
-      book.cover = ndlThumbnailUrl(isbn);
-      fieldSources.cover = "ndl";
-    } else {
-      const g = found.find((f) => f.source === "google" && f.cover);
-      book.cover = g ? g.cover : "";
-      if (g) fieldSources.cover = "google";
-      else delete fieldSources.cover;
-    }
+    const ob = found.find((f) => f.source === "openbd" && f.cover);
+    book.cover = ob ? ob.cover : "";
+    if (ob) fieldSources.cover = "openbd";
     // 著者：日本語（かな・漢字）の表記を最優先する。
     // 同じ条件なら、openBD の図書館式（例：筒井,康隆,1934-）より他の情報源の表記を優先
     const authorScore = (f) => (hasJapanese(f.author) ? 2 : 0) + (f.rawAuthorLibraryStyle ? 0 : 1);
@@ -534,6 +536,77 @@
     book.sources = sourcesUsed(fieldSources);
     return book;
   }
+
+  // openBD に表紙が無いときの表紙探し：国立国会図書館の書影 → Google
+  // （Google の画像は日本の本だと「画像なし」の絵のことが多いので最後にする）
+  async function resolveCover(isbn, found, ndlCoverCheck) {
+    if (await (ndlCoverCheck || imageExists(ndlThumbnailUrl(isbn)))) return { cover: ndlThumbnailUrl(isbn), source: "ndl" };
+    const g = found.find((f) => f.source === "google" && f.cover);
+    return g ? { cover: g.cover, source: "google" } : null;
+  }
+
+  function applyCover(book, c) {
+    if (!c) return;
+    book.cover = c.cover;
+    book.fieldSources.cover = c.source;
+    book.sources = sourcesUsed(book.fieldSources);
+  }
+
+  async function collectAll(tasks) {
+    const results = await Promise.allSettled(tasks);
+    const found = results.filter((r) => r.status === "fulfilled" && r.value).map((r) => r.value);
+    const allFailed = results.every((r) => r.status === "rejected");
+    return { found, allFailed };
+  }
+
+  // すべての情報源と表紙を待ってまとめる（「情報を再取得」「まとめて補う」用）
+  async function fetchBook(isbn) {
+    const { found, allFailed } = await collectAll(startSources(isbn));
+    if (!found.length) {
+      // すべて通信エラーなら呼び出し元にエラーとして伝える
+      if (allFailed) throw new Error("all sources failed");
+      return null;
+    }
+    const book = combineSources(isbn, found);
+    if (!book.cover) applyCover(book, await resolveCover(isbn, found));
+    return book;
+  }
+
+  // 登録用：最初に届いた情報ですぐ返し、残り（他の情報源・表紙）は later で後から届ける
+  async function fetchBookFast(isbn) {
+    const tasks = startSources(isbn);
+    // 表紙の確認も同時に始めておく（他の情報源を待ってから始めると、その分遅くなる）
+    const ndlCoverCheck = imageExists(ndlThumbnailUrl(isbn));
+    const results = tasks.map(() => null);
+    const wrapped = tasks.map((p, i) =>
+      p.then(
+        (v) => (results[i] = { ok: true, v }),
+        (e) => (results[i] = { ok: false, e })
+      )
+    );
+    const all = Promise.all(wrapped);
+    const firstHit = new Promise((resolve) => wrapped.forEach((w, i) => w.then(() => results[i].ok && results[i].v && resolve())));
+    await Promise.race([all, firstHit]);
+    // openBD（いちばん情報が正確）がまだなら、少しだけ待つ
+    if (!results[0]) await Promise.race([wrapped[0], new Promise((r) => setTimeout(r, PREFER_OPENBD_WAIT_MS))]);
+
+    const foundNow = results.filter((r) => r && r.ok && r.v).map((r) => r.v);
+    const later = all.then(async () => {
+      const { found } = await collectAll(tasks);
+      const full = combineSources(isbn, found);
+      if (full && !full.cover) applyCover(full, await resolveCover(isbn, found, ndlCoverCheck));
+      return full;
+    });
+    if (foundNow.length) return { book: combineSources(isbn, foundNow), later };
+    // まだ何も届いていなければ、全部の結果を待つ
+    const { found, allFailed } = await collectAll(tasks);
+    if (!found.length) {
+      if (allFailed) throw new Error("all sources failed");
+      return { book: null, later: Promise.resolve(null) };
+    }
+    return { book: combineSources(isbn, found), later };
+  }
+
 
   // かな・漢字を含むか（日本語の表記かどうか）
   function hasJapanese(text) {
@@ -573,7 +646,7 @@
 
   // ---- openBD ----
   async function fetchOpenBD(isbn) {
-    const res = await fetch("https://api.openbd.jp/v1/get?isbn=" + encodeURIComponent(isbn));
+    const res = await fetchWithTimeout("https://api.openbd.jp/v1/get?isbn=" + encodeURIComponent(isbn));
     if (!res.ok) throw new Error("openBD HTTP " + res.status);
     const data = await res.json();
     const entry = data && data[0];
@@ -624,7 +697,7 @@
 
   // ---- Google Books ----
   async function fetchGoogleBooks(isbn) {
-    const res = await fetch("https://www.googleapis.com/books/v1/volumes?q=isbn:" + encodeURIComponent(isbn));
+    const res = await fetchWithTimeout("https://www.googleapis.com/books/v1/volumes?q=isbn:" + encodeURIComponent(isbn));
     if (!res.ok) throw new Error("Google HTTP " + res.status);
     const data = await res.json();
     const items = (data && data.items) || [];
@@ -662,7 +735,7 @@
   }
 
   async function fetchNDL(isbn) {
-    const res = await fetch(NDL_OPENSEARCH + "?cnt=5&isbn=" + encodeURIComponent(isbn));
+    const res = await fetchWithTimeout(NDL_OPENSEARCH + "?cnt=5&isbn=" + encodeURIComponent(isbn));
     if (!res.ok) throw new Error("NDL HTTP " + res.status);
     const xml = new DOMParser().parseFromString(await res.text(), "application/xml");
     const items = [...xml.getElementsByTagName("item")];
@@ -1008,8 +1081,9 @@
     scanStatus.textContent = "書誌情報を取得中... (" + isbn + ")";
     try {
       let book = null;
+      let later = null;
       try {
-        book = await fetchBook(isbn);
+        ({ book, later } = await fetchBookFast(isbn));
       } catch (err) {
         console.error(err);
         showError("通信エラーのため書誌情報を取得できませんでした。ISBNのみで登録したので、あとで編集してください。");
@@ -1019,6 +1093,7 @@
       const owner = getCurrentOwner();
       book.owner = owner;
       if (addBookRecord(book)) {
+        if (later) fillInLater(isbn, book, later);
         vibrate(120);
         const who = owner === DEFAULT_OWNER ? "" : "【" + owner + "】";
         toast(who + (notFound ? "ISBNのみ登録: " : "追加: ") + book.title, notFound ? "warn" : "ok");
@@ -1027,6 +1102,33 @@
       lookupBusy = false;
       scanStatus.textContent = isScanning ? scanHint() : "";
     }
+  }
+
+  // 登録のあとに届いた情報（他の情報源・表紙）で、空いている項目を埋める
+  function fillInLater(isbn, early, later) {
+    later
+      .then((full) => {
+        if (!full) return;
+        const list = loadCatalog();
+        const rec = list.find((x) => x.isbn === isbn);
+        if (!rec) return;
+        // 登録したときのままの項目は、優先度の高い情報源の値に置き換える（全部そろってから調べた場合と同じ結果にする）。
+        // 登録後に手で直した項目は上書きしない
+        FIELDS.forEach((k) => {
+          if (full[k] && rec[k] === early[k] && rec[k] !== full[k]) rec[k] = full[k];
+        });
+        mergeInto(rec, full);
+        saveCatalog(list);
+        renderCatalog();
+        // その本を編集画面で開いていれば、空欄の入力欄にだけ反映する
+        if (editDialog.open && editingIsbn === isbn) {
+          [["title", "edit-title"], ["author", "edit-author"], ["publisher", "edit-publisher"]].forEach(([k, id]) => {
+            if (!$(id).value.trim()) $(id).value = rec[k] || "";
+          });
+          renderEditDetails(rec);
+        }
+      })
+      .catch((err) => console.error(err));
   }
 
   // ---------- 目録の表示 ----------
