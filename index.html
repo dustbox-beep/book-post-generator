@@ -7,13 +7,12 @@
 <title>Bookworm</title>
 <meta name="apple-mobile-web-app-title" content="Bookworm">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<link rel="stylesheet" href="style.css?v=20261109g">
+<link rel="stylesheet" href="style.css?v=20261110a">
 </head>
 <body>
 <div class="app">
   <header class="app-header">
     <h1>📚 Bookworm</h1>
-    <p class="subtitle">バーコードを続けて読み取ると目録に登録されます</p>
   </header>
 
   <main>
@@ -34,7 +33,6 @@
       <label class="btn btn-secondary file-btn photo-btn">🖼️ 写真を撮って読み取る
         <input type="file" id="photo-input" accept="image/*" capture="environment" hidden>
       </label>
-      <p class="scan-tip">うまく読めないときは、本を20〜30cmほど離して、バーコードが枠の中央に横向きで収まるようにしてください。</p>
       <p id="scan-status" class="status-text"></p>
 
       <details class="manual-input">
@@ -183,7 +181,7 @@
 <div id="toast" class="toast" hidden></div>
 
 <script src="vendor/zxing-library-0.21.3.min.js"></script>
-<script src="xlsx-writer.js?v=20261109g"></script>
-<script src="script.js?v=20261109g"></script>
+<script src="xlsx-writer.js?v=20261110a"></script>
+<script src="script.js?v=20261110a"></script>
 </body>
 </html>
