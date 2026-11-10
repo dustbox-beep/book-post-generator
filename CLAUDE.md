@@ -3,6 +3,7 @@
 ## このアプリについて
 - 「Bookworm」(旧名: 蔵書スキャン): 本のバーコード(ISBN)を読み取って蔵書目録を作る、スマホ向けの静的Webアプリ。
 - 公開URL: https://dustbox-beep.github.io/book-post-generator/ (本番用の枝 `claude/book-library-app-qwyxgd` をGitHub Pagesで配信)
+- 価格の自動取得: Yahoo!ショッピングAPIはブラウザから直接呼べないため、中継の Cloudflare Worker (`worker/`、詳細は `worker/README.md`) を経由する。ブックオフ・ネットオフの価格は各社のYahoo!ショッピング店の値。
 - ビルド不要。`index.html` / `script.js` / `style.css` / `xlsx-writer.js` をそのまま配信する。
 - 書誌情報は openBD → 国立国会図書館(NDL) → Google Books の順で取得する。
 - バーコード読み取りは同梱の `vendor/zxing-library-0.21.3.min.js` を使う(外部CDNから読み込まない)。
