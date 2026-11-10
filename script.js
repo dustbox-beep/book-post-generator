@@ -2,7 +2,7 @@
   "use strict";
 
   // 更新のたびに変える。index.html の「?v=」と同じ値にする（画面下に表示して、最新版か確かめられるようにする）
-  const APP_VERSION = "20261110a";
+  const APP_VERSION = "20261110b";
 
   const CATALOG_KEY = "book-catalog";
   const SAME_ISBN_COOLDOWN_MS = 4000;
@@ -901,6 +901,80 @@
     return a;
   }
 
+  // ---------- 価格を調べる（各社の検索ページを開く） ----------
+
+  // ISBN-13（978始まり）→ ISBN-10。979始まりは ISBN-10 がないので null
+  function toIsbn10(isbn13) {
+    if (!/^978\d{10}$/.test(isbn13)) return null;
+    const body = isbn13.slice(3, 12);
+    let sum = 0;
+    for (let i = 0; i < 9; i++) sum += Number(body[i]) * (10 - i);
+    const c = (11 - (sum % 11)) % 11;
+    return body + (c === 10 ? "X" : String(c));
+  }
+
+  // 各社の検索ページのURL。ヤフオクはISBNを書かない出品が多いので、タイトルがあればタイトルで探す
+  function priceLinks(isbn, title) {
+    const isbn10 = toIsbn10(isbn);
+    const yahooWord = encodeURIComponent(title || isbn);
+    return [
+      ["Amazon", isbn10 ? "https://www.amazon.co.jp/dp/" + isbn10 : "https://www.amazon.co.jp/s?i=stripbooks&k=" + isbn],
+      ["ヤフオク 出品中", "https://auctions.yahoo.co.jp/search/search?p=" + yahooWord],
+      ["ヤフオク 落札相場", "https://auctions.yahoo.co.jp/closedsearch/closedsearch?p=" + yahooWord],
+      ["ブックオフ", "https://shopping.bookoff.co.jp/search/keyword/" + isbn],
+      // ネットオフはISBNで直接開ける検索URLを確認できていないため、Google のサイト内検索を使う
+      ["ネットオフ", "https://www.google.com/search?q=" + encodeURIComponent("site:netoff.co.jp " + isbn)],
+    ];
+  }
+
+  function priceLinksBox(isbn, title) {
+    const box = document.createElement("div");
+    box.className = "price-links";
+    priceLinks(isbn, title).forEach(([name, url]) => {
+      const a = document.createElement("a");
+      a.href = url;
+      a.target = "_blank";
+      a.rel = "noopener";
+      a.className = "btn btn-secondary btn-small price-link";
+      a.textContent = name;
+      box.appendChild(a);
+    });
+    return box;
+  }
+
+  const priceForm = $("price-form");
+  const priceInput = $("price-isbn");
+  let priceLookupId = 0;
+  priceForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const isbn = normalizeIsbn(priceInput.value);
+    const linksEl = $("price-links");
+    const titleEl = $("price-title");
+    if (!isbn || !/^97[89]/.test(isbn)) {
+      linksEl.innerHTML = "";
+      titleEl.textContent = "正しいISBN（10桁または13桁）を入力してください。";
+      return;
+    }
+    priceInput.blur();
+    const known = findInCatalog(isbn);
+    const lookupId = ++priceLookupId;
+    const show = (title, note) => {
+      titleEl.textContent = (title ? "『" + title + "』" : "ISBN " + isbn) + (note || "");
+      linksEl.innerHTML = "";
+      linksEl.appendChild(priceLinksBox(isbn, title));
+    };
+    // まずISBNだけで、すぐにボタンを出す。タイトルは裏で調べて、届いたらヤフオクの検索語に使う
+    show(known && known.title, known ? "（目録に登録済み）" : "");
+    if (known && known.title) return;
+    fetchBookFast(isbn)
+      .then((r) => {
+        if (lookupId !== priceLookupId) return;
+        const t = r && r.book && r.book.title;
+        if (t && t !== "(タイトル不明)") show(t);
+      })
+      .catch(() => {});
+  });
+
   // ---------- 表示用の部品 ----------
 
   // ---------- 目録データ ----------
@@ -1323,6 +1397,12 @@
       box.appendChild(dl);
     }
     box.appendChild(hanmotoLink(b.isbn));
+    if (b.kind !== "magazine" && /^97[89]/.test(b.isbn)) {
+      const h = document.createElement("p");
+      h.className = "price-head";
+      h.textContent = "💴 価格を調べる";
+      box.append(h, priceLinksBox(b.isbn, b.title));
+    }
     if (!rows.length) {
       const p = document.createElement("p");
       p.className = "edit-meta";

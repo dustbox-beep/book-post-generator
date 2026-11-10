@@ -505,6 +505,34 @@ main {
   text-decoration: none;
 }
 
+.price-links {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.price-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  white-space: nowrap;
+  text-align: center;
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+.price-head {
+  margin: 12px 0 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+#price-title {
+  margin: 10px 0 0;
+}
+
 .owned-tabs {
   display: flex;
   gap: 6px;
