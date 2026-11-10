@@ -2,7 +2,7 @@
   "use strict";
 
   // 更新のたびに変える。index.html の「?v=」と同じ値にする（画面下に表示して、最新版か確かめられるようにする）
-  const APP_VERSION = "20261110c";
+  const APP_VERSION = "20261110d";
 
   const CATALOG_KEY = "book-catalog";
   const SAME_ISBN_COOLDOWN_MS = 4000;
@@ -919,8 +919,7 @@
     const yahooWord = encodeURIComponent(title || isbn);
     return [
       ["Amazon", isbn10 ? "https://www.amazon.co.jp/dp/" + isbn10 : "https://www.amazon.co.jp/s?i=stripbooks&k=" + isbn],
-      ["ヤフオク 出品中", "https://auctions.yahoo.co.jp/search/search?p=" + yahooWord],
-      ["ヤフオク 落札相場", "https://auctions.yahoo.co.jp/closedsearch/closedsearch?p=" + yahooWord],
+      ["ヤフオク", "https://auctions.yahoo.co.jp/search/search?p=" + yahooWord],
       ["ブックオフ", "https://shopping.bookoff.co.jp/search/keyword/" + isbn],
       ["ネットオフ", "https://www.netoff.co.jp/cmdtyallsearch/?cat=&cname=" + encodeURIComponent("すべてのカテゴリー") + "&word=" + isbn],
     ];
