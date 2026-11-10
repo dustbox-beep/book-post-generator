@@ -1,0 +1,5 @@
+# Cloudflare の「Gitに接続」で使う設定。シークレット YAHOO_APPID は Cloudflare の画面で登録する
+name = "bookworm-price"
+main = "price-proxy.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
