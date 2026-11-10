@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>価格取得のお試し</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif; background: #f5f2ea; color: #2d2a24; margin: 0; padding: 16px; }
+  h1 { font-size: 1.2rem; }
+  .card { background: #fff; border-radius: 14px; padding: 14px; margin-bottom: 12px; }
+  label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 10px; }
+  input { width: 100%; box-sizing: border-box; padding: 10px; font-size: 1rem; border: 1px solid #ddd5c4; border-radius: 10px; margin-top: 4px; }
+  button { width: 100%; padding: 12px; font-size: 1rem; font-weight: 600; border: 0; border-radius: 10px; background: #b5651d; color: #fff; }
+  .note { font-size: 0.8rem; color: #6b655a; }
+  .log { font-size: 0.8rem; white-space: pre-wrap; word-break: break-all; }
+  ul { list-style: none; padding: 0; margin: 0; }
+  li { border-top: 1px solid #eee; padding: 8px 0; font-size: 0.85rem; }
+  li a { color: #8a4a12; }
+  .price { font-weight: 700; font-size: 1rem; }
+  .used { color: #2e7d32; font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>💴 価格取得のお試し（Yahoo!ショッピング）</h1>
+<div class="card">
+  <label>アプリケーションID（Client ID）
+    <input type="text" id="appid" autocomplete="off" autocapitalize="off" spellcheck="false">
+  </label>
+  <p class="note">入力したIDはこのiPhoneの中にだけ保存されます。</p>
+  <label>ISBN
+    <input type="text" id="isbn" inputmode="numeric" value="9784167158057">
+  </label>
+  <button type="button" id="go">価格を取得</button>
+</div>
+<div class="card">
+  <p class="note">結果の診断（スクリーンショットを送ってください）</p>
+  <div id="log" class="log"></div>
+</div>
+<div class="card">
+  <ul id="list"></ul>
+</div>
+<script>
+(function () {
+  "use strict";
+  const KEY = "yahoo-appid-test";
+  const API = "https://shopping.yahooapis.jp/ShoppingWebService/V3/itemSearch";
+  const TIMEOUT_MS = 8000;
+  const $ = (id) => document.getElementById(id);
+  try { $("appid").value = localStorage.getItem(KEY) || ""; } catch (e) {}
+
+  const log = (s) => { $("log").textContent += s + "\n"; };
+
+  function toIsbn13(raw) {
+    const s = String(raw).replace(/[^0-9Xx]/g, "").toUpperCase();
+    if (/^\d{13}$/.test(s)) return s;
+    if (/^\d{9}[\dX]$/.test(s)) {
+      const body = "978" + s.slice(0, 9);
+      let sum = 0;
+      for (let i = 0; i < 12; i++) sum += Number(body[i]) * (i % 2 ? 3 : 1);
+      return body + ((10 - (sum % 10)) % 10);
+    }
+    return null;
+  }
+
+  function url(appid, isbn) {
+    return API + "?appid=" + encodeURIComponent(appid) + "&jan_code=" + isbn + "&results=50&sort=%2Bprice";
+  }
+
+  async function tryFetch(u) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+    try {
+      const res = await fetch(u, { signal: ctrl.signal });
+      const text = await res.text();
+      if (!res.ok) throw new Error("HTTP " + res.status + " " + text.slice(0, 200));
+      return JSON.parse(text);
+    } finally { clearTimeout(t); }
+  }
+
+  function tryJsonp(u) {
+    return new Promise((resolve, reject) => {
+      const name = "yjp" + Date.now();
+      const s = document.createElement("script");
+      const done = (fn, v) => { clearTimeout(t); delete window[name]; s.remove(); fn(v); };
+      const t = setTimeout(() => done(reject, new Error("時間切れ")), TIMEOUT_MS);
+      window[name] = (data) => done(resolve, data);
+      s.onerror = () => done(reject, new Error("読み込み失敗"));
+      s.src = u + "&callback=" + name;
+      document.head.appendChild(s);
+    });
+  }
+
+  function render(data) {
+    const hits = (data && data.hits) || [];
+    log("見つかった件数: " + hits.length + "（全体 " + (data && data.totalResultsAvailable) + "）");
+    const list = $("list");
+    list.innerHTML = "";
+    hits.forEach((h) => {
+      const li = document.createElement("li");
+      const price = document.createElement("div");
+      price.className = "price";
+      price.textContent = Number(h.price).toLocaleString("ja-JP") + "円";
+      const cond = document.createElement("span");
+      if (h.condition === "used") { cond.className = "used"; cond.textContent = "【中古】"; }
+      else cond.textContent = h.condition === "new" ? "【新品】" : "";
+      const store = document.createElement("div");
+      store.textContent = (h.seller && h.seller.name) || "(店名不明)";
+      store.prepend(cond);
+      const a = document.createElement("a");
+      a.href = h.url; a.target = "_blank"; a.rel = "noopener";
+      a.textContent = h.name || "(商品名不明)";
+      li.append(price, store, a);
+      list.appendChild(li);
+    });
+    const stores = hits.map((h) => (h.seller && h.seller.name) || "");
+    log("ブックオフの出品: " + (stores.some((n) => /ブックオフ|BOOKOFF/i.test(n)) ? "あり" : "なし"));
+    log("ネットオフの出品: " + (stores.some((n) => /ネットオフ|NETOFF/i.test(n)) ? "あり" : "なし"));
+  }
+
+  $("go").addEventListener("click", async () => {
+    $("log").textContent = "";
+    $("list").innerHTML = "";
+    const appid = $("appid").value.trim();
+    const isbn = toIsbn13($("isbn").value);
+    if (!appid) { log("アプリケーションIDを入力してください。"); return; }
+    if (!isbn) { log("ISBNが正しくありません。"); return; }
+    try { localStorage.setItem(KEY, appid); } catch (e) {}
+    log("ISBN " + isbn + " で問い合わせます。");
+    const u = url(appid, isbn);
+    try {
+      const data = await tryFetch(u);
+      log("① ふつうの読み込み: 成功（中継サーバー不要）");
+      render(data);
+      return;
+    } catch (e) {
+      log("① ふつうの読み込み: 失敗（" + (e.name === "AbortError" ? "時間切れ" : e.message) + "）");
+    }
+    try {
+      const data = await tryJsonp(u);
+      log("② JSONPでの読み込み: 成功（中継サーバー不要）");
+      render(data);
+    } catch (e) {
+      log("② JSONPでの読み込み: 失敗（" + e.message + "）");
+      log("→ ブラウザから直接は使えないため、中継サーバーが必要です。");
+    }
+  });
+
+  window.__renderForTest = render;
+})();
+</script>
+</body>
+</html>
