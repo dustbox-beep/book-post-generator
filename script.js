@@ -2,7 +2,7 @@
   "use strict";
 
   // 更新のたびに変える。index.html の「?v=」と同じ値にする（画面下に表示して、最新版か確かめられるようにする）
-  const APP_VERSION = "20261110d";
+  const APP_VERSION = "20261110e";
 
   const CATALOG_KEY = "book-catalog";
   const SAME_ISBN_COOLDOWN_MS = 4000;
@@ -901,7 +901,7 @@
     return a;
   }
 
-  // ---------- 価格を調べる（各社の検索ページを開く） ----------
+  // ---------- 価格を調べる（価格一覧＋各社の検索ページを開くボタン） ----------
 
   // ISBN-13（978始まり）→ ISBN-10。979始まりは ISBN-10 がないので null
   function toIsbn10(isbn13) {
@@ -940,6 +940,98 @@
     return box;
   }
 
+  // ---------- 価格一覧（中継の Worker 経由で Yahoo!ショッピングの出品を取得） ----------
+
+  const PRICE_API = "https://bookworm-price.beards-hows-2x.workers.dev/";
+  const PRICE_TIMEOUT_MS = 8000;
+  const PRICE_SHOW = 5; // 最初に見せる件数（残りは「すべて表示」で開く）
+  const priceCache = new Map(); // 同じ本を何度も開いたときは、この画面を開いている間は使い回す
+
+  function fetchPrices(isbn) {
+    if (priceCache.has(isbn)) return priceCache.get(isbn);
+    const p = fetchWithTimeout(PRICE_API + "?isbn=" + isbn, PRICE_TIMEOUT_MS)
+      .then((res) => {
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      })
+      .then((data) => (Array.isArray(data && data.items) ? data.items : []))
+      .catch((e) => {
+        priceCache.delete(isbn); // 失敗は覚えない（次に開いたとき再挑戦）
+        throw e;
+      });
+    priceCache.set(isbn, p);
+    return p;
+  }
+
+  function priceRow(item) {
+    const li = document.createElement("li");
+    const a = document.createElement("a");
+    a.href = item.url;
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.className = "price-item";
+    const price = document.createElement("span");
+    price.className = "price-amount";
+    price.textContent = Number(item.price).toLocaleString("ja-JP") + "円";
+    const cond = document.createElement("span");
+    cond.className = "price-cond " + (item.condition === "used" ? "is-used" : "is-new");
+    cond.textContent = item.condition === "used" ? "中古" : "新品";
+    const shop = document.createElement("span");
+    shop.className = "price-shop";
+    shop.textContent = item.group || item.shop || "(店名不明)";
+    if (item.group && item.shop && item.shop !== item.group) shop.title = item.shop;
+    a.append(price, cond, shop);
+    if (item.freeShipping) {
+      const f = document.createElement("span");
+      f.className = "price-free";
+      f.textContent = "送料無料";
+      a.appendChild(f);
+    }
+    li.appendChild(a);
+    return li;
+  }
+
+  // 価格一覧の入れ物をすぐ返し、中身は届いてから埋める（利用者を待たせない）
+  function priceListBox(isbn) {
+    const box = document.createElement("div");
+    box.className = "price-list";
+    const status = document.createElement("p");
+    status.className = "note price-status";
+    status.textContent = "Yahoo!ショッピングの価格を調べています…";
+    box.appendChild(status);
+    fetchPrices(isbn)
+      .then((items) => {
+        if (!items.length) {
+          status.textContent = "Yahoo!ショッピングには在庫がありませんでした。下のボタンで各サイトを確かめてください。";
+          return;
+        }
+        status.textContent = "Yahoo!ショッピングの出品（安い順・送料別）";
+        const ul = document.createElement("ul");
+        ul.className = "price-items";
+        items.forEach((it, i) => {
+          const li = priceRow(it);
+          if (i >= PRICE_SHOW) li.hidden = true;
+          ul.appendChild(li);
+        });
+        box.appendChild(ul);
+        if (items.length > PRICE_SHOW) {
+          const more = document.createElement("button");
+          more.type = "button";
+          more.className = "btn btn-secondary btn-small price-more";
+          more.textContent = "すべて表示（" + items.length + "件）";
+          more.addEventListener("click", () => {
+            ul.querySelectorAll("li[hidden]").forEach((li) => (li.hidden = false));
+            more.remove();
+          });
+          box.appendChild(more);
+        }
+      })
+      .catch((e) => {
+        status.textContent = (e && e.name === "AbortError" ? "価格の取得が時間切れになりました。" : "価格を取得できませんでした。") + "下のボタンで各サイトを確かめてください。";
+      });
+    return box;
+  }
+
   const priceForm = $("price-form");
   const priceInput = $("price-isbn");
   let priceLookupId = 0;
@@ -956,10 +1048,11 @@
     priceInput.blur();
     const known = findInCatalog(isbn);
     const lookupId = ++priceLookupId;
+    const listEl = priceListBox(isbn);
     const show = (title, note) => {
       titleEl.textContent = (title ? "『" + title + "』" : "ISBN " + isbn) + (note || "");
       linksEl.innerHTML = "";
-      linksEl.appendChild(priceLinksBox(isbn, title));
+      linksEl.append(listEl, priceLinksBox(isbn, title));
     };
     // まずISBNだけで、すぐにボタンを出す。タイトルは裏で調べて、届いたらヤフオクの検索語に使う
     show(known && known.title, known ? "（目録に登録済み）" : "");
@@ -1399,7 +1492,7 @@
       const h = document.createElement("p");
       h.className = "price-head";
       h.textContent = "💴 価格を調べる";
-      box.append(h, priceLinksBox(b.isbn, b.title));
+      box.append(h, priceListBox(b.isbn), priceLinksBox(b.isbn, b.title));
     }
     if (!rows.length) {
       const p = document.createElement("p");

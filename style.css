@@ -529,6 +529,69 @@ main {
   font-weight: 600;
 }
 
+.price-list {
+  margin-top: 8px;
+}
+
+.price-status {
+  margin: 0;
+}
+
+.price-items {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+}
+
+.price-items li {
+  border-top: 1px solid #eee6d6;
+}
+
+.price-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 2px;
+  color: inherit;
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+.price-amount {
+  font-weight: 700;
+  font-size: 1rem;
+  min-width: 5em;
+}
+
+.price-cond {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 6px;
+}
+
+.price-cond.is-used { background: #e3f1e4; color: #2e7d32; }
+.price-cond.is-new { background: #e6eef8; color: #2c5a8c; }
+
+.price-shop {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.price-free {
+  font-size: 0.7rem;
+  color: #8a4a12;
+  white-space: nowrap;
+}
+
+.price-more {
+  width: 100%;
+  margin-top: 4px;
+}
+
 #price-title {
   margin: 10px 0 0;
 }
